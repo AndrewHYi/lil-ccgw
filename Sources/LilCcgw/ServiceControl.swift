@@ -25,8 +25,8 @@ enum ServiceControl {
             .appendingPathComponent("Library/LaunchAgents/\(label).plist")
     }
 
-    static var domainTarget: String { "gui/\(getuid())" }
-    static var serviceTarget: String { "\(domainTarget)/\(label)" }
+    static var domainTarget: String { Derive.domainTarget(uid: getuid()) }
+    static var serviceTarget: String { Derive.serviceTarget(uid: getuid(), label: label) }
 
     static var isAgentInstalled: Bool {
         FileManager.default.fileExists(atPath: plistPath.path)

@@ -96,7 +96,10 @@ struct MenuBarLabel: View {
 
     /// Spoken form carries the scene too — the glyph is the whole signal in
     /// icon-only mode, and a template image says nothing to a screen reader.
-    private var accessibilityText: String {
+    ///
+    /// Internal rather than private so tests can assert it; there is no way to
+    /// read a rendered view's accessibility label without a host app.
+    var accessibilityText: String {
         guard let budget = trackedBudget else {
             return scene.caption.isEmpty ? "ccgw: no data" : "ccgw: \(scene.caption)"
         }

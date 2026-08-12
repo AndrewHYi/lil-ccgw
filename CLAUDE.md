@@ -116,13 +116,40 @@ Hand-rolled harness in `Tests/TestSupport.swift`, ~40 lines, because XCTest and
 swift-testing both want SwiftPM or xcodebuild. It reports file and line and exits
 non-zero on failure — verify that by breaking an assertion, not by trusting it.
 
-Cover the things that fail *silently*: decoding (null rates, the `degrade`
-action, `primary` absent, epoch-ms conversion), window parsing, title-budget
-fallback, formatting, and glyph-per-state. Fixtures are captured verbatim from a
-live gateway with numbers pinned.
+338 assertions across four suites:
 
-Do not write tests that hit the network or `launchctl`. Those paths are verified
-by hand against a live gateway, below.
+| Suite | Covers |
+|---|---|
+| `ModelsTests` | decoding (null rates, `degrade`, absent `primary`, epoch-ms), window parsing, title-budget fallback, bumper state, the ceiling rule |
+| `PresentationTests` | currency/rate/duration formatting, title modes, no-data placeholders |
+| `SkitTests` | every pace boundary from both sides, tier precedence, the zen clock, shape-distinctness, animation shape |
+| `DeriveTests` | budget heat, poll intervals, dashboard URL, bumpable filter, launchd targets, error text, accessibility label, registered defaults |
+
+**Coverage rule: if logic decides something, it gets a test — even when it lives
+inside a `@MainActor` class.** Extract it rather than leaving it unreachable.
+`BudgetHeat.resolve` and the `Derive` helpers exist for exactly that reason; the
+model delegates to them, so the tests cover the real path rather than a copy.
+
+Cover what fails *silently* in preference to what crashes loudly. A wrong soft
+threshold, a stale bumper, an epoch-ms slip, or a malformed launchd target all
+produce plausible output and no error.
+
+**Verify the tests can fail.** Mutate the source and confirm a red result — a
+suite that can't fail is worse than no suite because it licenses confidence.
+Six mutations are known-caught: hardcoding the soft threshold, dropping the
+poll-interval zero-guard, inverting the ceiling filter, ignoring bump expiry,
+treating epoch ms as seconds, and breaking the launchd target shape.
+
+### Not unit-tested, deliberately
+
+- **SwiftUI view bodies** (`PanelView`, `SettingsView`, the label's rendered
+  output) — needs a host app. Their *inputs* are all tested instead.
+- **Network and `launchctl`** — `GatewayClient` and `ServiceControl` I/O. Verified
+  by hand against a live gateway, below.
+- **`FrameAnimator` timing** — measured with a probe app rather than asserted;
+  see the ergonomics skill for the numbers.
+
+Don't paper over these with mocks that assert the mock.
 
 ## Testing against a live gateway
 

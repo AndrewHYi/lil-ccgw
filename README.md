@@ -48,8 +48,17 @@ record, `~/.ccgw/bin/ccgw`, live health — with a remedy for each failure.
 
 ## Install
 
-macOS 14 or later. Needs the Swift toolchain from Command Line Tools; Xcode is
-not required.
+macOS 14 or later.
+
+```sh
+brew install --cask AndrewHYi/tap/lil-ccgw
+```
+
+Upgrade with `brew upgrade --cask AndrewHYi/tap/lil-ccgw`.
+
+### From source
+
+Needs the Swift toolchain from Command Line Tools; Xcode is not required.
 
 ```sh
 git clone git@github.com:AndrewHYi/lil-ccgw.git
@@ -62,10 +71,6 @@ open /Applications/lil-ccgw.app
 
 There's no `Package.swift` on purpose — SwiftPM can't run on a CLT-only host, and
 [CLAUDE.md](CLAUDE.md) explains why.
-
-`brew install --cask AndrewHYi/tap/lil-ccgw` is the eventual path, but the tap
-and public releases are pending a decision about making this repo public.
-Homebrew can't fetch assets from a private repo.
 
 ## Settings
 
@@ -161,11 +166,20 @@ start, not immediately.
 scripts/test.sh
 ```
 
-135 assertions over the parts that fail quietly: decoding the gateway's payloads
-(null rates, the `degrade` action, a missing `primary`, epoch-ms timestamps),
-budget-window parsing, title-budget fallback, formatting, and the glyph each
-state maps to. Network and `launchctl` paths are checked by hand against a live
-gateway.
+338 assertions over the parts that fail *quietly* — where being wrong produces
+plausible output rather than an error: decoding the gateway's payloads (null
+rates, the `degrade` action, a missing `primary`, epoch-ms timestamps), every
+pace boundary from both sides, the bumper's ceiling rule, budget-window parsing,
+soft-threshold colour, launchd target strings, formatting, and the glyph each
+state maps to.
+
+The suite is mutation-checked: breaking the source has to turn it red. Six known
+mutations are caught, including hardcoding the soft threshold, ignoring bump
+expiry, and treating epoch milliseconds as seconds.
+
+SwiftUI view bodies, network I/O, and `launchctl` calls are not unit-tested —
+they'd need a host app or a live gateway, and mocking them would only assert the
+mock. Those are checked by hand against a running gateway instead.
 
 ## Comparing against Anthropic's usage page
 

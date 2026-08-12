@@ -282,4 +282,54 @@ enum BudgetHeat: Equatable {
     case normal
     case soft
     case exhausted
+
+    /// Pure derivation, kept out of `GatewayModel` so tests can reach it without
+    /// a live gateway or the main actor.
+    ///
+    /// The gateway owns the threshold via `soft_threshold_pct`, so this reads it
+    /// rather than hardcoding 80 — and honours the `soft` flag too, since the
+    /// gateway can set it for reasons of its own.
+    static func resolve(status: GatewayStatus?, budget: Budget?) -> BudgetHeat {
+        guard let status, let budget else { return .normal }
+        if budget.exhausted { return .exhausted }
+        if budget.soft || budget.pct >= status.softThresholdPct { return .soft }
+        return .normal
+    }
+}
+
+/// Pure helpers for values that used to live inside `GatewayModel` and were
+/// therefore unreachable from tests. The model delegates to these.
+enum Derive {
+    /// Poll cadence. An open panel refreshes briskly; a closed one stays cheap.
+    /// Zero or missing values fall back rather than producing a hot loop.
+    static func pollInterval(open: Bool, openValue: Double, closedValue: Double) -> Double {
+        let value = open ? openValue : closedValue
+        return value > 0 ? value : (open ? 5 : 30)
+    }
+
+    /// Dashboard URL. Always loopback by literal IP: the gateway validates the
+    /// Host header against loopback names, and `localhost` can resolve to an
+    /// IPv6 literal it rejects.
+    static func dashboardURL(host: String, port: Int) -> URL? {
+        let h = host.trimmingCharacters(in: .whitespaces)
+        let safeHost = h.isEmpty ? "127.0.0.1" : h
+        let safePort = port > 0 ? port : 8484
+        return URL(string: "http://\(safeHost):\(safePort)/dash")
+    }
+
+    /// Budgets a bumper can be applied to — everything except the overall
+    /// ceiling, which the gateway rejects with a 400.
+    static func bumpableBudgets(_ all: [Budget]) -> [Budget] {
+        all.filter { !$0.isCeiling(among: all) }
+    }
+
+    /// The launchd service target for the gateway agent. A typo here means Stop
+    /// and Start silently do nothing, so it is asserted rather than trusted.
+    static func serviceTarget(uid: UInt32, label: String) -> String {
+        "gui/\(uid)/\(label)"
+    }
+
+    static func domainTarget(uid: UInt32) -> String {
+        "gui/\(uid)"
+    }
 }

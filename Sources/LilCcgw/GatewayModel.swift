@@ -86,10 +86,7 @@ final class GatewayModel {
     /// the gateway's own soft threshold keeps its meaning even while the glyph
     /// is busy reporting burn rate.
     var budgetHeat: BudgetHeat {
-        guard let status = snapshot.status, let budget = trackedBudget else { return .normal }
-        if budget.exhausted { return .exhausted }
-        if budget.soft || budget.pct >= status.softThresholdPct { return .soft }
-        return .normal
+        BudgetHeat.resolve(status: snapshot.status, budget: trackedBudget)
     }
 
     var isDown: Bool { reachability == .down }
@@ -136,9 +133,10 @@ final class GatewayModel {
     }
 
     var dashboardURL: URL? {
-        let host = UserDefaults.standard.string(forKey: DefaultsKey.gatewayHost) ?? "127.0.0.1"
-        let port = UserDefaults.standard.integer(forKey: DefaultsKey.gatewayPort)
-        return URL(string: "http://\(host):\(port == 0 ? 8484 : port)/dash")
+        Derive.dashboardURL(
+            host: UserDefaults.standard.string(forKey: DefaultsKey.gatewayHost) ?? "127.0.0.1",
+            port: UserDefaults.standard.integer(forKey: DefaultsKey.gatewayPort)
+        )
     }
 
     // MARK: - Lifecycle
@@ -159,9 +157,11 @@ final class GatewayModel {
     }
 
     private var currentInterval: Double {
-        let key = panelIsOpen ? DefaultsKey.pollOpen : DefaultsKey.pollClosed
-        let value = UserDefaults.standard.double(forKey: key)
-        return value > 0 ? value : (panelIsOpen ? 5 : 30)
+        Derive.pollInterval(
+            open: panelIsOpen,
+            openValue: UserDefaults.standard.double(forKey: DefaultsKey.pollOpen),
+            closedValue: UserDefaults.standard.double(forKey: DefaultsKey.pollClosed)
+        )
     }
 
     /// Applies host/port changes made in Settings without a relaunch.
@@ -269,8 +269,7 @@ final class GatewayModel {
     /// Budgets a bumper can actually be applied to. Excludes the overall ceiling,
     /// which the gateway rejects.
     var bumpableBudgets: [Budget] {
-        let all = snapshot.status?.budgets ?? []
-        return all.filter { !$0.isCeiling(among: all) }
+        Derive.bumpableBudgets(snapshot.status?.budgets ?? [])
     }
 
     /// Real stop: boots the agent out of launchd so KeepAlive cannot respawn it.

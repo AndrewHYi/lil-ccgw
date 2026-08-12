@@ -11,5 +11,6 @@ UserDefaults.registerLilCcgwDefaults()
 runModelsTests()
 runPresentationTests()
 runSkitTests()
+runDeriveTests()
 
 exit(T.report())
