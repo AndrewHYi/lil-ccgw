@@ -111,11 +111,37 @@ cannot be forgotten. Resume early:
 {"enforcement": "on"}
 ```
 
+## PUT /api/budgets — bumper
+
+Mutating. A temporary extra allowance on one budget:
+
+```json
+{"bump": {"budget_id": "session", "amount_usd": 25, "minutes": 60}}
+{"bump": {"budget_id": "session", "clear": true}}
+```
+
+- `amount_usd` must be > 0 and ≤ 10000; the stacked total is also capped at 10000.
+- `minutes` clamps to 5…10080. **Omit it** to get the budget's own window length.
+- **Bumps stack.** Re-bumping an active bumper *adds* to it and keeps the later
+  expiry, so topping up never needs a clear first. Verified live: $50 + $10 → $60
+  with the original expiry intact.
+- `effective_limit_usd` then includes the bump; derive the base by subtracting
+  `bump_usd`, or a bumped budget looks permanently larger than configured.
+- `bump_usd` outlives its expiry in config, so **`bump_expires_at` is the
+  authority** for whether a bumper is live.
+
+**The overall ceiling cannot be bumped.** The widest-window `action: "block"`
+budget returns 400 — *"bumping it would raise total spend"* — because a bump is
+meant to reshape when you spend, not how much. `Budget.isCeiling(among:)` must
+identify the same budget the gateway does, or the UI offers a button that always
+fails. Only `block` budgets count when picking the widest; a wider `warn` or
+`degrade` budget is not the ceiling.
+
 The same endpoint also accepts `budgets`, `soft_threshold_pct`, `admission`,
-`effort_cap`, `model_cap`, `model_routes`, `api_token`, `hook_telemetry`, and
-`bump`. **`lil-ccgw` deliberately touches only `enforcement`** — budget limits
-and the effort/model governors are deliberate-decision surfaces that belong to
-the dashboard and `/gateway:budget`, not a glance-and-click menu.
+`effort_cap`, `model_cap`, `model_routes`, `api_token`, and `hook_telemetry`.
+**`lil-ccgw` touches only `enforcement` and `bump`** — budget limits and the
+effort/model governors are deliberate-decision surfaces that belong to the
+dashboard and `/gateway:budget`, not a glance-and-click menu.
 
 ## Not used, and why
 
@@ -125,7 +151,7 @@ the dashboard and `/gateway:budget`, not a glance-and-click menu.
 | `/api/pricing` | rate table is reference material, not a live metric |
 | `/api/annotate` | writes user annotations; no menu affordance for it |
 | `/api/update-check`, `/api/update` | updates go through `gateway-update`, which also rebuilds the binary |
-| `bump` on `/api/budgets` | raising a budget should be deliberate |
+| `effort_cap` / `model_cap` / `model_routes` | governors change how requests are served, not just when — a deliberate decision, not a menu click |
 
 ## Verifying after a gateway update
 

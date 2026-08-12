@@ -61,6 +61,35 @@ struct Budget: Decodable, Identifiable {
     /// same window as the budget it sits under, so the two cannot disagree.
     var windowSeconds: TimeInterval? { Budget.parseWindow(window) }
 
+    /// Whether a bumper is currently in force. `bump_usd` outlives its expiry in
+    /// config, so the timestamp is the authority.
+    func hasActiveBump(now: Date = Date()) -> Bool {
+        guard let amount = bumpUsd, amount > 0, let expires = bumpExpiresAt else { return false }
+        return Date(timeIntervalSince1970: expires / 1000) > now
+    }
+
+    var bumpExpiryDate: Date? {
+        bumpExpiresAt.map { Date(timeIntervalSince1970: $0 / 1000) }
+    }
+
+    /// The limit before any bumper — `effective_limit_usd` already includes it.
+    var baseLimitUsd: Double {
+        hasActiveBump() ? effectiveLimitUsd - (bumpUsd ?? 0) : effectiveLimitUsd
+    }
+
+    /// True for the widest-window `block` budget, which the gateway refuses to
+    /// bump: raising the overall ceiling would increase total spend rather than
+    /// redistribute it, so a bumper there defeats the point. Offering the action
+    /// on this budget earns a 400, so the UI hides it instead.
+    func isCeiling(among budgets: [Budget]) -> Bool {
+        let blocking = budgets.filter { $0.action == "block" }
+        guard !blocking.isEmpty else { return false }
+        let widest = blocking.max { lhs, rhs in
+            (lhs.windowSeconds ?? 0) < (rhs.windowSeconds ?? 0)
+        }
+        return widest?.id == id
+    }
+
     static func parseWindow(_ text: String) -> TimeInterval? {
         guard let unit = text.last, let value = Double(text.dropLast()) else { return nil }
         switch unit {

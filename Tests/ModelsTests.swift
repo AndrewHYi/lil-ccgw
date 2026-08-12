@@ -129,6 +129,65 @@ func runModelsTests() {
         T.expect(resume.timeIntervalSince1970 > 1_700_000_000, "resume date is not epoch 1970")
     }
 
+    T.suite("bumper state") {
+        let now = Date(timeIntervalSince1970: 1_786_560_000)
+        let future = (now.timeIntervalSince1970 + 3600) * 1000
+        let past = (now.timeIntervalSince1970 - 3600) * 1000
+
+        // effective_limit_usd already includes the bump, so the base has to be
+        // derived — otherwise a bumped budget looks permanently larger than
+        // configured.
+        let bumped = makeBudget(pct: 20, bumpUsd: 50, bumpExpiresAt: future, effectiveLimit: 125)
+        T.expect(bumped.hasActiveBump(now: now), "active bump is detected")
+        T.close(bumped.baseLimitUsd, 75, "base limit excludes the bump")
+        T.expect(bumped.bumpExpiryDate != nil, "expiry decodes")
+
+        // bump_usd outlives its expiry in config, so the timestamp is the
+        // authority. Trusting the amount alone would show a stale bumper.
+        let expired = makeBudget(pct: 20, bumpUsd: 50, bumpExpiresAt: past, effectiveLimit: 125)
+        T.expect(!expired.hasActiveBump(now: now), "expired bump is not active")
+        T.close(expired.baseLimitUsd, 125, "expired bump leaves the limit alone")
+
+        let none = makeBudget(pct: 20)
+        T.expect(!none.hasActiveBump(now: now), "no bump fields means no bump")
+        T.close(none.baseLimitUsd, 75, "unbumped base is the effective limit")
+
+        // A zero-amount bumper with a live timestamp is not a bumper.
+        let zero = makeBudget(pct: 20, bumpUsd: 0, bumpExpiresAt: future, effectiveLimit: 75)
+        T.expect(!zero.hasActiveBump(now: now), "zero amount is not an active bump")
+    }
+
+    T.suite("ceiling budget cannot be bumped") {
+        // The gateway rejects bumping the widest-window block budget with a 400,
+        // so the UI must identify the same budget or it offers an action that
+        // always fails.
+        let status = try decodeFixture(GatewayStatus.self, statusFixture)
+        let all = status.budgets
+
+        let session = all.first { $0.id == "session" }!      // 5h  block
+        let weekly = all.first { $0.id == "weekly" }!        // 7d  warn
+        let monthly = all.first { $0.id == "monthly" }!      // 30d block
+        let degrade = all.first { $0.id == "monthly-degrade" }! // 30d degrade
+
+        T.expect(monthly.isCeiling(among: all), "widest block budget is the ceiling")
+        T.expect(!session.isCeiling(among: all), "narrower block budget is bumpable")
+        T.expect(!weekly.isCeiling(among: all), "warn budget is not the ceiling")
+        T.expect(!degrade.isCeiling(among: all), "degrade budget is not the ceiling")
+
+        // A 30d warn budget must not be mistaken for the ceiling just because it
+        // is the widest overall — only block budgets count.
+        let noBlock = [
+            makeBudget(pct: 1, id: "a", window: "7d", action: "warn"),
+            makeBudget(pct: 1, id: "b", window: "30d", action: "warn"),
+        ]
+        T.expect(!noBlock[1].isCeiling(among: noBlock), "no block budget means no ceiling")
+
+        // A single block budget is itself the ceiling, so nothing is bumpable —
+        // exactly what the gateway's error message warns about.
+        let single = [makeBudget(pct: 1, id: "only", window: "5h", action: "block")]
+        T.expect(single[0].isCeiling(among: single), "a lone block budget is the ceiling")
+    }
+
     T.suite("health decoding") {
         let health = try decodeFixture(GatewayHealth.self, healthFixture)
         T.equal(health.ok, true, "ok")
@@ -166,14 +225,20 @@ func runModelsTests() {
 
 // MARK: - Fixtures builders
 
-func makeBudget(pct: Double, id: String = "test", window: String = "5h", action: String = "block") -> Budget {
+func makeBudget(
+    pct: Double, id: String = "test", window: String = "5h", action: String = "block",
+    bumpUsd: Double? = nil, bumpExpiresAt: Double? = nil, effectiveLimit: Double = 75
+) -> Budget {
+    let bumpField: String = bumpUsd == nil ? "null" : String(format: "%.2f", bumpUsd!)
+    let expiryField: String = bumpExpiresAt == nil ? "null" : String(format: "%.0f", bumpExpiresAt!)
     let json = """
     {
       "id": "\(id)", "scope": "global", "window": "\(window)",
-      "effective_limit_usd": 75, "spent_usd": 10, "remaining_usd": 65,
+      "effective_limit_usd": \(effectiveLimit), "spent_usd": 10, "remaining_usd": 65,
       "pct": \(pct), "action": "\(action)", "exhausted": false, "soft": false,
       "burn_rate_hr": null, "sustainable_hr": null, "pace": null,
-      "bump_usd": null, "bump_expires_at": null
+      "bump_usd": \(bumpField),
+      "bump_expires_at": \(expiryField)
     }
     """
     return try! decodeFixture(Budget.self, json)

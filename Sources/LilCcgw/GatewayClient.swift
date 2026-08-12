@@ -91,6 +91,29 @@ actor GatewayClient {
         _ = try await send("/api/budgets", method: "PUT", body: ["enforcement": "on"])
     }
 
+    /// Add a temporary allowance to one budget.
+    ///
+    /// `minutes` nil means "this window" — the gateway defaults to the budget's
+    /// own window length. It clamps to 5…10080 and the amount to 0…10000.
+    ///
+    /// Bumps **stack**: bumping an active bumper adds to it and keeps the later
+    /// expiry, so topping up never requires clearing first.
+    ///
+    /// The gateway refuses to bump the overall ceiling — the widest-window
+    /// `block` budget — because that would raise total spend rather than
+    /// reshaping it. Callers should not offer the action there; see
+    /// `Budget.isCeiling(among:)`.
+    func bump(budgetId: String, amountUsd: Double, minutes: Int?) async throws {
+        var bump: [String: Any] = ["budget_id": budgetId, "amount_usd": amountUsd]
+        if let minutes { bump["minutes"] = minutes }
+        _ = try await send("/api/budgets", method: "PUT", body: ["bump": bump])
+    }
+
+    func clearBump(budgetId: String) async throws {
+        _ = try await send("/api/budgets", method: "PUT",
+                           body: ["bump": ["budget_id": budgetId, "clear": true]])
+    }
+
     // MARK: - Plumbing
 
     private func url(_ path: String) throws -> URL {

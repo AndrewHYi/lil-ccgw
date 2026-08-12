@@ -133,6 +133,17 @@ through all eight stages either way.
 | **Pause** | Pauses budget enforcement for N minutes; the gateway auto-resumes |
 | **Stop** | `launchctl bootout` — confirms first |
 | **Bypass** | Unwires `ANTHROPIC_BASE_URL` so Claude Code goes direct |
+| **+ bumper** | Adds a temporary allowance to one budget, per row |
+
+Each budget row carries its own bumper: **+ bumper** opens an inline amount and
+duration form, an active one shows as `+$50.00 until 7:41 PM` with the base limit
+beside it, and **+ more** stacks on top (the later expiry wins). Duration defaults
+to the budget's own window.
+
+The overall ceiling — the widest-window `block` budget — has no bumper button,
+because the gateway refuses to raise it. That's the design: a bump reshapes when
+you can spend, not how much, so it comes out of remaining headroom and the
+sustainable pace for the rest of the window drops to match.
 
 Stop uses `bootout` rather than `ccgw stop` because the LaunchAgent sets
 `KeepAlive=true` — a plain SIGTERM gets respawned within the second, so the

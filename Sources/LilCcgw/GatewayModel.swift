@@ -255,6 +255,24 @@ final class GatewayModel {
         await perform { try await self.client.resumeEnforcement() }
     }
 
+    /// `minutes` nil means the budget's own window.
+    func bump(budgetId: String, amountUsd: Double, minutes: Int?) async {
+        await perform {
+            try await self.client.bump(budgetId: budgetId, amountUsd: amountUsd, minutes: minutes)
+        }
+    }
+
+    func clearBump(budgetId: String) async {
+        await perform { try await self.client.clearBump(budgetId: budgetId) }
+    }
+
+    /// Budgets a bumper can actually be applied to. Excludes the overall ceiling,
+    /// which the gateway rejects.
+    var bumpableBudgets: [Budget] {
+        let all = snapshot.status?.budgets ?? []
+        return all.filter { !$0.isCeiling(among: all) }
+    }
+
     /// Real stop: boots the agent out of launchd so KeepAlive cannot respawn it.
     func stopGateway() async {
         await perform {

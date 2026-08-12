@@ -18,6 +18,11 @@ struct PanelView: View {
     /// dashboard re-rolling its tooltip on every hover.
     @State private var joke: String?
 
+    /// Budget id whose bumper form is open, if any.
+    @State private var bumping: String?
+    @State private var bumpAmount = "25"
+    @State private var bumpMinutes = 0
+
     private enum Confirmation: Identifiable {
         case stop, bypass
         var id: String {
@@ -183,10 +188,111 @@ struct PanelView: View {
                     }
                     ProgressView(value: budget.fraction)
                         .tint(color(for: budget, softThreshold: status.softThresholdPct))
+
+                    bumpRow(budget, all: status.budgets)
                 }
             }
         }
         .font(.system(size: 11))
+    }
+
+    /// The bumper affordance: an active bumper's state, and a way to add one.
+    ///
+    /// Hidden entirely on the overall ceiling — the gateway rejects a bump there
+    /// with a 400, since raising the widest block budget would increase total
+    /// spend rather than redistribute it.
+    @ViewBuilder
+    private func bumpRow(_ budget: Budget, all: [Budget]) -> some View {
+        if budget.isCeiling(among: all) {
+            EmptyView()
+        } else {
+            HStack(spacing: 6) {
+                if budget.hasActiveBump() {
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.up.circle.fill")
+                        Text("+\(Fmt.usd(budget.bumpUsd ?? 0))")
+                            .monospacedDigit()
+                        if let expiry = budget.bumpExpiryDate {
+                            Text("until \(Fmt.clockTime(expiry))")
+                        }
+                        Button {
+                            Task { await model.clearBump(budgetId: budget.id) }
+                        } label: {
+                            Image(systemName: "xmark")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Remove this bumper")
+                    }
+                    .font(.system(size: 10))
+                    .foregroundStyle(.blue)
+                    // The base limit matters once a bumper is active: the
+                    // headline figure already includes it, so without this the
+                    // budget looks larger than it was configured to be.
+                    Text("(base \(Fmt.limit(budget.baseLimitUsd)))")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                }
+                Spacer()
+                Button(budget.hasActiveBump() ? "+ more" : "+ bumper") {
+                    bumping = (bumping == budget.id) ? nil : budget.id
+                    bumpAmount = "25"
+                    bumpMinutes = 0
+                }
+                .buttonStyle(.borderless)
+                .font(.system(size: 10))
+            }
+
+            if bumping == budget.id {
+                bumpForm(budget)
+            }
+        }
+    }
+
+    private func bumpForm(_ budget: Budget) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Text("Allow an extra")
+                TextField("", text: $bumpAmount)
+                    .frame(width: 46)
+                    .monospacedDigit()
+                    .multilineTextAlignment(.trailing)
+                Text("USD for")
+                Picker("", selection: $bumpMinutes) {
+                    // 0 stands for "omit minutes", which makes the gateway use
+                    // the budget's own window — its documented default.
+                    Text("this window (\(budget.window))").tag(0)
+                    Text("1 hour").tag(60)
+                    Text("12 hours").tag(720)
+                    Text("24 hours").tag(1440)
+                }
+                .labelsHidden()
+                .frame(width: 130)
+            }
+            HStack(spacing: 6) {
+                Button("Apply") {
+                    guard let amount = Double(bumpAmount), amount > 0 else { return }
+                    let minutes = bumpMinutes == 0 ? nil : bumpMinutes
+                    Task {
+                        await model.bump(budgetId: budget.id, amountUsd: amount, minutes: minutes)
+                        bumping = nil
+                    }
+                }
+                .disabled(Double(bumpAmount).map { $0 <= 0 } ?? true)
+                Button("Cancel") { bumping = nil }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
+            Text(budget.hasActiveBump()
+                 ? "Stacks on top of the active bumper; the later expiry wins."
+                 : "The overall ceiling is never raised, so total spend stays capped — the bump comes out of remaining headroom, and the sustainable pace for the rest of the window drops to match.")
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.system(size: 10))
+        .padding(6)
+        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 4))
     }
 
     private func burn(_ primary: PrimaryBudget) -> some View {
