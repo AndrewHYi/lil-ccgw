@@ -67,9 +67,15 @@ final class GatewayModel {
 
     let animator = FrameAnimator()
 
-    private let client = GatewayClient()
+    private let client: GatewayClient
     private var pollTask: Task<Void, Never>?
     private var notifier = ThresholdNotifier()
+
+    /// `client` is injectable for tests; production uses the default, which
+    /// talks to loopback over URLSession.
+    init(client: GatewayClient = GatewayClient()) {
+        self.client = client
+    }
 
     // MARK: - Derived state
 
@@ -132,6 +138,14 @@ final class GatewayModel {
         return snapshot.titleBudget(preferredId: (preferred?.isEmpty == false) ? preferred : nil)
     }
 
+    /// `host:port` as configured — named in the down message so the user can see
+    /// at a glance whether the app is even pointed at the right place.
+    var gatewayAddress: String {
+        let host = UserDefaults.standard.string(forKey: DefaultsKey.gatewayHost) ?? "127.0.0.1"
+        let port = UserDefaults.standard.integer(forKey: DefaultsKey.gatewayPort)
+        return "\(host.isEmpty ? "127.0.0.1" : host):\(port > 0 ? port : 8484)"
+    }
+
     var dashboardURL: URL? {
         Derive.dashboardURL(
             host: UserDefaults.standard.string(forKey: DefaultsKey.gatewayHost) ?? "127.0.0.1",
@@ -160,7 +174,8 @@ final class GatewayModel {
         Derive.pollInterval(
             open: panelIsOpen,
             openValue: UserDefaults.standard.double(forKey: DefaultsKey.pollOpen),
-            closedValue: UserDefaults.standard.double(forKey: DefaultsKey.pollClosed)
+            closedValue: UserDefaults.standard.double(forKey: DefaultsKey.pollClosed),
+            down: isDown
         )
     }
 
@@ -272,12 +287,63 @@ final class GatewayModel {
         Derive.bumpableBudgets(snapshot.status?.budgets ?? [])
     }
 
+    /// One action that gets the gateway back, whatever is actually wrong.
+    ///
+    /// While the gateway is down Claude Code fails every request, so this is the
+    /// most important button in the app — and the user shouldn't have to know
+    /// whether the agent is loaded-but-wedged (needs `kickstart`) or booted out
+    /// (needs `bootstrap`). It escalates, and reports what it tried if both fail.
+    func recover() async {
+        isBusy = true
+        defer { isBusy = false }
+
+        var attempts: [String] = []
+        let loaded = await ServiceControl.isAgentLoaded()
+
+        if loaded {
+            attempts.append("kickstart")
+            try? await ServiceControl.kickstartRestart()
+            try? await Task.sleep(for: .seconds(2))
+            await refresh()
+            if !isDown { lastError = nil; return }
+        }
+
+        // Either the agent was never loaded, or kickstarting a loaded-but-broken
+        // agent didn't take.
+        attempts.append("bootstrap")
+        do {
+            try await ServiceControl.start()
+        } catch {
+            await refresh()
+            lastError = "Recovery failed (\(attempts.joined(separator: " → "))): \(error.localizedDescription)"
+            return
+        }
+        try? await Task.sleep(for: .seconds(3))
+        await refresh()
+
+        if isDown {
+            lastError = "Tried \(attempts.joined(separator: " → ")) — still not answering. Check ~/.ccgw/logs/launchd.err.log."
+        } else {
+            lastError = nil
+        }
+    }
+
     /// Real stop: boots the agent out of launchd so KeepAlive cannot respawn it.
     func stopGateway() async {
-        await perform {
-            try await ServiceControl.stop()
+        isBusy = true
+        defer { isBusy = false }
+        var note: String?
+        var failure: String?
+        do {
+            note = try await ServiceControl.stop()
             try? await Task.sleep(for: .seconds(1))
+        } catch {
+            failure = error.localizedDescription
         }
+        await refresh()
+        // Surfaced after the refresh for the same reason control errors are: the
+        // refresh clears lastError whenever the gateway answers.
+        lastError = failure ?? note
     }
 
     func startGateway() async {
@@ -303,13 +369,22 @@ final class GatewayModel {
     private func perform(_ work: @escaping () async throws -> Void) async {
         isBusy = true
         defer { isBusy = false }
+
+        var actionError: String?
         do {
             try await work()
-            lastError = nil
         } catch {
-            lastError = error.localizedDescription
+            actionError = error.localizedDescription
         }
+
         await refresh()
+
+        // Re-assert after the refresh, which clears `lastError` whenever the
+        // gateway answers. Without this the failure is wiped milliseconds after
+        // it happens and the panel shows nothing — so a rejected bumper, whose
+        // 400 carries the gateway's actual reason, looked like a button that
+        // simply did nothing.
+        if let actionError { lastError = actionError }
     }
 }
 
@@ -326,8 +401,12 @@ private struct ThresholdNotifier {
 
         if reachability == .down {
             if !downFired && defaults.bool(forKey: DefaultsKey.notifyDown) {
-                Notifier.post(title: "ccgw is not responding",
-                              body: "Claude Code requests will fail until it is back.")
+                // Lead with the consequence: the user cares that Claude Code is
+                // broken, and the gateway is only the reason why.
+                Notifier.post(
+                    title: "Claude Code requests are failing",
+                    body: "The ccgw gateway stopped answering. Open the menu bar item to recover it, or bypass it to keep working."
+                )
             }
             downFired = true
         } else {

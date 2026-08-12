@@ -157,16 +157,52 @@ struct PanelView: View {
         }
     }
 
+    /// The down state, written consequence-first.
+    ///
+    /// "Gateway not responding" is the technical fact; "Claude Code is failing"
+    /// is what the user is actually experiencing, and it's the reason they came
+    /// looking. Lead with that, then offer the two ways out: bring the gateway
+    /// back, or take Claude Code out from behind it.
     private var downNotice: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Gateway is not responding")
-                .font(.system(size: 12, weight: .semibold))
-            Text(model.agentLoaded
-                 ? "The launchd agent is loaded but nothing is answering on the port."
-                 : "The launchd agent is not loaded. Start it to restore Claude Code.")
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                Text("Claude Code requests are failing")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+
+            Text("Claude Code is wired to send every request through this gateway, and it isn't answering on \(model.gatewayAddress). Requests will fail with connection refused until it's back.")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            Text(model.agentLoaded
+                 ? "The launchd agent is loaded, so something is wedged rather than missing."
+                 : "The launchd agent isn't loaded — most likely it was stopped deliberately.")
+                .font(.system(size: 10))
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 6) {
+                Button("Recover gateway") { Task { await model.recover() } }
+                    .buttonStyle(.borderedProminent)
+                Button("Bypass…") { confirming = .bypass }
+            }
+            .controlSize(.small)
+            .disabled(model.isBusy)
+
+            Text("Bypass unwires Claude Code from the gateway so it talks to the API directly — it works even while the gateway is down, but budgets stop being enforced and it needs a Claude Code restart.")
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let error = model.lastError {
+                Text(error)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -364,8 +400,11 @@ struct PanelView: View {
     private var controls: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
-                if model.isDown && !model.agentLoaded {
-                    Button("Start") { Task { await model.startGateway() } }
+                if model.isDown {
+                    // Recovery already has a prominent button in the down notice;
+                    // this row keeps only what still makes sense with no gateway
+                    // to talk to.
+                    Button("Recover") { Task { await model.recover() } }
                 } else {
                     Button("Restart") { Task { await model.restart() } }
                 }

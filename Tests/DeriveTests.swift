@@ -72,6 +72,23 @@ func runDeriveTests() {
         T.close(Derive.pollInterval(open: true, openValue: -3, closedValue: 30), 5, "negative falls back")
     }
 
+    T.suite("down state retries fast") {
+        // While the gateway is down Claude Code is failing every request, so the
+        // most useful thing the app can do is notice recovery quickly. A refused
+        // connection costs microseconds, so this is nearly free.
+        T.close(Derive.pollInterval(open: false, openValue: 5, closedValue: 30, down: true),
+                Derive.downRetrySeconds, "down overrides the closed cadence")
+        T.close(Derive.pollInterval(open: true, openValue: 5, closedValue: 30, down: true),
+                Derive.downRetrySeconds, "down overrides the open cadence too")
+        T.expect(Derive.downRetrySeconds < 30,
+                 "the down retry is faster than the idle cadence")
+        T.expect(Derive.downRetrySeconds >= 1, "but not a hot loop")
+
+        // A configured cadence still wins while the gateway is healthy.
+        T.close(Derive.pollInterval(open: false, openValue: 5, closedValue: 45, down: false),
+                45, "healthy closed cadence is untouched")
+    }
+
     T.suite("dashboard URL") {
         T.equal(Derive.dashboardURL(host: "127.0.0.1", port: 8484)?.absoluteString,
                 "http://127.0.0.1:8484/dash", "default")

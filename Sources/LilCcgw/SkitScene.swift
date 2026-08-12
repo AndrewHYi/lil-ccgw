@@ -300,9 +300,21 @@ enum BudgetHeat: Equatable {
 /// Pure helpers for values that used to live inside `GatewayModel` and were
 /// therefore unreachable from tests. The model delegates to these.
 enum Derive {
-    /// Poll cadence. An open panel refreshes briskly; a closed one stays cheap.
-    /// Zero or missing values fall back rather than producing a hot loop.
-    static func pollInterval(open: Bool, openValue: Double, closedValue: Double) -> Double {
+    /// How quickly to retry while the gateway is unreachable.
+    ///
+    /// Deliberately short and independent of the panel: while the gateway is
+    /// down, Claude Code is failing every request, so the single most useful
+    /// thing this app can do is notice the moment it comes back. A refused
+    /// connection fails in milliseconds, so retrying often costs nothing.
+    static let downRetrySeconds: Double = 5
+
+    /// Poll cadence. An open panel refreshes briskly; a closed one stays cheap;
+    /// a down gateway is retried fast regardless. Zero or missing values fall
+    /// back rather than producing a hot loop.
+    static func pollInterval(
+        open: Bool, openValue: Double, closedValue: Double, down: Bool = false
+    ) -> Double {
+        if down { return downRetrySeconds }
         let value = open ? openValue : closedValue
         return value > 0 ? value : (open ? 5 : 30)
     }
