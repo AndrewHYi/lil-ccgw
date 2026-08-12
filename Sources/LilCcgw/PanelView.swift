@@ -228,7 +228,7 @@ struct PanelView: View {
                     // The base limit matters once a bumper is active: the
                     // headline figure already includes it, so without this the
                     // budget looks larger than it was configured to be.
-                    Text("(base \(Fmt.limit(budget.baseLimitUsd)))")
+                    Text("(base \(Fmt.limit(budget.baseLimitUsd())))")
                         .font(.system(size: 10))
                         .foregroundStyle(.tertiary)
                 }

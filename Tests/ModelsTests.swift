@@ -139,18 +139,18 @@ func runModelsTests() {
         // configured.
         let bumped = makeBudget(pct: 20, bumpUsd: 50, bumpExpiresAt: future, effectiveLimit: 125)
         T.expect(bumped.hasActiveBump(now: now), "active bump is detected")
-        T.close(bumped.baseLimitUsd, 75, "base limit excludes the bump")
+        T.close(bumped.baseLimitUsd(now: now), 75, "base limit excludes the bump")
         T.expect(bumped.bumpExpiryDate != nil, "expiry decodes")
 
         // bump_usd outlives its expiry in config, so the timestamp is the
         // authority. Trusting the amount alone would show a stale bumper.
         let expired = makeBudget(pct: 20, bumpUsd: 50, bumpExpiresAt: past, effectiveLimit: 125)
         T.expect(!expired.hasActiveBump(now: now), "expired bump is not active")
-        T.close(expired.baseLimitUsd, 125, "expired bump leaves the limit alone")
+        T.close(expired.baseLimitUsd(now: now), 125, "expired bump leaves the limit alone")
 
         let none = makeBudget(pct: 20)
         T.expect(!none.hasActiveBump(now: now), "no bump fields means no bump")
-        T.close(none.baseLimitUsd, 75, "unbumped base is the effective limit")
+        T.close(none.baseLimitUsd(now: now), 75, "unbumped base is the effective limit")
 
         // A zero-amount bumper with a live timestamp is not a bumper.
         let zero = makeBudget(pct: 20, bumpUsd: 0, bumpExpiresAt: future, effectiveLimit: 75)

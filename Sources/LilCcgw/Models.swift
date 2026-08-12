@@ -73,8 +73,12 @@ struct Budget: Decodable, Identifiable {
     }
 
     /// The limit before any bumper — `effective_limit_usd` already includes it.
-    var baseLimitUsd: Double {
-        hasActiveBump() ? effectiveLimitUsd - (bumpUsd ?? 0) : effectiveLimitUsd
+    ///
+    /// Takes `now` rather than reading the clock so tests are deterministic: an
+    /// earlier version called `Date()` internally, which made a test pass or fail
+    /// depending on what time of day it ran.
+    func baseLimitUsd(now: Date = Date()) -> Double {
+        hasActiveBump(now: now) ? effectiveLimitUsd - (bumpUsd ?? 0) : effectiveLimitUsd
     }
 
     /// True for the widest-window `block` budget, which the gateway refuses to
