@@ -52,7 +52,15 @@ enum Notifier {
     }
 
     /// Human-readable explanation for the Alerts pane.
+    ///
+    /// Checks `isAvailable` first rather than trusting `status`. `status` only
+    /// becomes `.unavailable` once `requestAuthorizationIfNeeded()` has run, so
+    /// keying off it alone meant the pane could render toggles with no warning
+    /// attached while notifications were in fact impossible.
     static var explanation: String? {
+        if !isAvailable {
+            return "Running unbundled — notifications need the assembled .app."
+        }
         switch status {
         case .unavailable:
             return "Running unbundled — notifications need the assembled .app."
