@@ -26,9 +26,24 @@ struct MenuBarLabel: View {
     let mode: TitleMode
     let trackedBudget: Budget?
 
+    /// Width reserved for the glyph.
+    ///
+    /// 20pt because that is the widest symbol any state uses
+    /// (`party.popper.fill`); `figure.mind.and.body` is 18. A 16pt slot clipped
+    /// both. Measured across candidate slots of 16/18/20/22 — see
+    /// `RenderTests.swift`, which asserts nothing outgrows it.
+    static let glyphSlotWidth: Double = 20
+
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: glyph).foregroundStyle(tint)
+            // Fixed slot, not natural width. The animation frames within a tier
+            // are different symbols and therefore different widths — measured at
+            // up to 6pt apart — so without this the status item resizes on every
+            // tick and shoves its menu bar neighbours sideways several times a
+            // second. RenderTests asserts every tier's frames now measure equal.
+            Image(systemName: glyph)
+                .frame(width: Self.glyphSlotWidth, alignment: .center)
+                .foregroundStyle(tint)
             if let text = renderedText {
                 Text(text)
                     .monospacedDigit()
