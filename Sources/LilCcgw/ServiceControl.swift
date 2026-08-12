@@ -44,10 +44,63 @@ enum ServiceControl {
         return result.exitCode == 0
     }
 
-    /// Real stop: kills the process *and* unloads the agent so KeepAlive can't
-    /// resurrect it.
-    static func stop() async throws {
-        try await runOrThrow("/bin/launchctl", ["bootout", serviceTarget])
+    /// Real stop, in two steps because one is not enough.
+    ///
+    /// `launchctl bootout` unloads the agent so `KeepAlive` can't respawn, but it
+    /// **exits 3 and does nothing** when the agent isn't loaded — and a gateway
+    /// process can outlive its agent (started by hand, or orphaned by an earlier
+    /// bootout). Verified: with the agent unloaded and a process still serving,
+    /// `bootout` reports "No such process" while the port keeps answering, and
+    /// `ccgw stop` can't help either because its pidfile is gone.
+    ///
+    /// So: unload first, then terminate whatever is still listening. Order
+    /// matters — killing before unloading just invites KeepAlive to respawn it.
+    ///
+    /// Returns a note when it had to fall back to killing the listener, so the
+    /// UI can say what actually happened.
+    @discardableResult
+    static func stop() async throws -> String? {
+        let bootout = await run("/bin/launchctl", ["bootout", serviceTarget])
+        // Exit 3 is "no such process" — the agent simply wasn't loaded, which is
+        // a fine starting point, not a failure.
+        if bootout.exitCode != 0 && bootout.exitCode != 3 {
+            let detail = bootout.stderr.isEmpty ? bootout.stdout : bootout.stderr
+            throw ServiceError.message(
+                detail.isEmpty ? "launchctl bootout exited \(bootout.exitCode)"
+                               : detail.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+
+        try? await Task.sleep(for: .milliseconds(700))
+        guard let pid = await listeningPID() else { return nil }
+
+        // Something is still serving with no agent behind it. Nothing can respawn
+        // it now, so terminating is safe and is what the user asked for.
+        _ = await run("/bin/kill", [String(pid)])
+        try? await Task.sleep(for: .milliseconds(700))
+        if let survivor = await listeningPID() {
+            throw ServiceError.message(
+                "Agent unloaded, but pid \(survivor) is still serving the port and would not terminate.")
+        }
+        return "The agent was unloaded and an unmanaged process (pid \(pid)) was terminated."
+    }
+
+    /// PID listening on the configured gateway port, if any.
+    ///
+    /// Used to tell "the gateway is stopped" apart from "the agent is gone but
+    /// something is still answering", which are different problems with different
+    /// fixes.
+    static func listeningPID(port: Int? = nil) async -> Int32? {
+        let resolved = port ?? {
+            let p = UserDefaults.standard.integer(forKey: DefaultsKey.gatewayPort)
+            return p > 0 ? p : 8484
+        }()
+        let result = await run("/usr/sbin/lsof",
+                              ["-nP", "-iTCP:\(resolved)", "-sTCP:LISTEN", "-t"])
+        guard result.exitCode == 0 else { return nil }
+        return result.stdout
+            .split(whereSeparator: \.isNewline)
+            .compactMap { Int32($0.trimmingCharacters(in: .whitespaces)) }
+            .first
     }
 
     static func start() async throws {
