@@ -4,6 +4,33 @@ A macOS Menu Bar Extra for [ccgw](docs/gateway.md), the local API gateway that
 enforces Claude Code spend budgets. It makes the primary budget ambient and puts
 the gateway's controls one click away.
 
+## Finishing work
+
+**Commit and push without being asked.** When a change is coherent and verified,
+commit it at atomic boundaries and push before you stop. Do not leave a finished
+deliverable uncommitted, and do not ask permission for the mechanical step.
+
+The quality bar is what makes that safe, so keep it:
+
+- Atomic commits; conventional subject ≤50 chars; body wrapped at 72, why-first,
+  no diff narration.
+- **Every commit builds and passes tests standalone.** Verify it rather than
+  assuming — a file-based split once produced three commits that didn't compile,
+  because a test entry point referenced a function three commits ahead:
+  ```sh
+  git worktree add /tmp/w <sha> && (cd /tmp/w && ./scripts/test.sh)
+  ```
+- Fix a flaky or environment-dependent test *before* the commits that depend on it,
+  or every earlier commit fails for an unrelated reason.
+- Force-push is fine when history needs reshaping: branch a backup, verify
+  `git diff <backup>` is empty, push, delete the backup.
+- Cut a release when shipped behaviour changed — see `release-cask`. Pick the bump
+  from the conventional-commit types in the range (`feat:` means minor).
+
+Still stop and ask before anything irreversible or outward-facing that hasn't been
+authorised: changing repo visibility, publishing material belonging to someone
+else, deleting data.
+
 ## Skills in this repo
 
 Load the one that matches the task before improvising:

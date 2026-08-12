@@ -105,8 +105,9 @@ the 5-hour window, unless you pick another in Display.
 
 ## The icon
 
-Two independent signals. The **glyph** reports burn rate, ported from the
-dashboard's `#skit` escalation with the same thresholds:
+Two independent signals. The **glyph** and its animation speed report **pace** —
+burn rate ÷ sustainable rate — ported from the dashboard's `#skit` escalation with
+the same thresholds:
 
 | Pace | Icon | Caption |
 |---|---|---|
@@ -119,9 +120,16 @@ dashboard's `#skit` escalation with the same thresholds:
 | budget exhausted | rain | `<budget>` is spent |
 | 1st of the month | confetti | budgets reset |
 
-**Colour** reports something different: how much of the budget is gone. Normal,
+**Colour** reports something different: how much of the budget is *spent*. Normal,
 amber at the gateway's soft threshold, red when exhausted. So a calm leaf in amber
-is a real state — sustainable burn, but most of the window already spent.
+is a real state — sustainable burn, but most of the window already gone.
+
+One caveat if you compare scenes with `/dash`: the thresholds match, but the input
+windows don't. This app reads the gateway's `pace`, computed over the last 60
+minutes; the dashboard recomputes its own over 20 minutes, so it escalates roughly
+three times faster during a burst. Deliberate — an ambient icon that re-tiers every
+twenty seconds is noise — but it means the two can legitimately show different
+stages at the same moment.
 
 The panel header carries the caption and a rotating aside, re-rolled each time you
 open it. Settings → Display has an animate toggle and a "Force scene" picker for

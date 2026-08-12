@@ -15,19 +15,20 @@ SwiftUI renders `MenuBarExtra` labels as **template images** in most
 configurations, which flattens colour to monochrome. A design that encodes state
 only in colour reads as no state at all.
 
-So every state gets its **own SF Symbol**, distinguishable by shape:
+So every state gets its **own SF Symbol**, distinguishable by shape. The pace
+ladder (see below) supplies eight of them; three more cover the app's own states:
 
 | State | Glyph |
 |---|---|
-| healthy | `circle.lefthalf.filled` |
-| over soft threshold | `exclamationmark.circle.fill` |
-| exhausted | `xmark.octagon.fill` |
+| gateway unreachable | `wifi.slash` |
 | enforcement paused | `pause.circle.fill` |
-| gateway down | `exclamationmark.triangle.fill` |
-| unknown / starting | `circle.dotted` |
+| no data yet | `circle.dotted` |
 
-Colour is applied as reinforcement where it survives. **Never** add a state whose
-only distinguishing feature is its tint.
+`RenderTests` asserts all eleven are distinct — both by symbol name and by
+rasterised output, since two different names can render identical art. **Never** add
+a state whose only distinguishing feature is its tint, and note that
+`exclamationmark.triangle.fill` now belongs to the `crit` tier, so the down state
+uses `wifi.slash` instead.
 
 Use SF Symbols rather than a bundled image: they are template-rendered, adapt to
 light and dark menu bars for free, and scale with the menu bar's font metrics.
@@ -60,6 +61,37 @@ habitually reach for. Two consequences:
   in and reads as a dead button. `SettingsWindow.present` calls
   `NSApp.activate(ignoringOtherApps:)` and raises the window. Any future window
   needs the same treatment.
+
+## The glyph tracks pace; colour tracks percentage
+
+Two independent axes, and it matters that they stay independent:
+
+- **Glyph and animation speed** come from `pace` — burn rate ÷ sustainable rate.
+- **Colour** comes from how much of the tracked budget is spent.
+
+So an amber leaf is a real, useful state: calm burn with most of the window gone.
+The one crossover is `rip`, which fires on `exhausted` (a percentage condition) and
+outranks the whole pace ladder.
+
+### The app and the dashboard use different pace windows
+
+The thresholds are ported exactly (0.85 / 1.2 / 1.6 / 2.0). **The input is not.**
+
+| Surface | Source | Window |
+|---|---|---|
+| lil-ccgw | `/api/status.primary.pace` | last 60 min, computed by the gateway |
+| `/dash` | recomputed from `/api/requests` | last 20 min, extrapolated ×3 |
+
+Measured simultaneously on one machine: the app read pace 1.10× (`warm`) while the
+dashboard read 2.00× (`crit`) — different scenes at the same instant. The dashboard
+is roughly three times more responsive to a burst.
+
+This is currently a deliberate difference, not a bug: an ambient menu bar icon that
+re-tiers every twenty seconds is noise, and the smoother signal is the one worth
+trusting at a glance. The trade is that the app escalates later than `/dash` during
+a sudden runaway. If that trade is ever revisited, matching the dashboard means
+computing burn from `/api/requests` over 20 minutes rather than reading
+`primary.pace` — and this table should be updated, not deleted.
 
 ## Animating the icon: two measured facts
 
