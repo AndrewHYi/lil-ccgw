@@ -27,17 +27,16 @@ enum GatewayError: LocalizedError {
 ///    today; sending the token unconditionally means flipping that config flag
 ///    later doesn't silently break every button in the menu.
 actor GatewayClient {
-    private let session: URLSession
+    private let transport: Transport
     private var host: String
     private var port: Int
 
-    init(host: String = "127.0.0.1", port: Int = 8484) {
+    /// `transport` is injectable so tests can drive the model without a gateway
+    /// and assert the requests it issues. Production keeps the default.
+    init(host: String = "127.0.0.1", port: Int = 8484, transport: Transport = URLSessionTransport()) {
         self.host = host
         self.port = port
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 3
-        config.waitsForConnectivity = false
-        self.session = URLSession(configuration: config)
+        self.transport = transport
     }
 
     func configure(host: String, port: Int) {
@@ -123,15 +122,6 @@ actor GatewayClient {
         return url
     }
 
-    private func request(_ path: String, method: String) throws -> URLRequest {
-        var req = URLRequest(url: try url(path))
-        req.httpMethod = method
-        if let token = Self.apiToken() {
-            req.setValue(token, forHTTPHeaderField: "X-CCGW-Token")
-        }
-        return req
-    }
-
     private func get<T: Decodable>(_ path: String) async throws -> T {
         let data = try await send(path, method: "GET", body: nil)
         let decoder = JSONDecoder()
@@ -140,23 +130,9 @@ actor GatewayClient {
     }
 
     private func send(_ path: String, method: String, body: [String: Any]?) async throws -> Data {
-        var req = try request(path, method: method)
-        if let body {
-            req.setValue("application/json", forHTTPHeaderField: "content-type")
-            req.httpBody = try JSONSerialization.data(withJSONObject: body)
-        }
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: req)
-        } catch {
-            throw GatewayError.unreachable
-        }
-        guard let http = response as? HTTPURLResponse else { throw GatewayError.unreachable }
-        guard (200..<300).contains(http.statusCode) else {
-            throw GatewayError.http(http.statusCode, String(data: data, encoding: .utf8))
-        }
-        return data
+        let payload = try body.map { try JSONSerialization.data(withJSONObject: $0) }
+        let request = GatewayRequest(path: path, method: method, body: payload)
+        return try await transport.send(request, to: try url(path), token: Self.apiToken())
     }
 
     /// Read once per call rather than caching: the token file can appear or be

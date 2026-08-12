@@ -16,4 +16,9 @@ runDeriveTests()
 // Render tests host real SwiftUI views, so they need the main actor.
 await MainActor.run { runRenderTests() }
 
+// Model tests are async and main-actor isolated. Top-level `await` in main.swift
+// is the pattern that works here — a DispatchSemaphore around a @MainActor task
+// deadlocks, because blocking the main thread starves the actor it's waiting on.
+await runModelTests()
+
 exit(T.report())
