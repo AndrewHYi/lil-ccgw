@@ -4,6 +4,20 @@ A macOS Menu Bar Extra for [ccgw](docs/gateway.md), the local API gateway that
 enforces Claude Code spend budgets. It makes the primary budget ambient and puts
 the gateway's controls one click away.
 
+## Skills in this repo
+
+Load the one that matches the task before improvising:
+
+| Skill | For |
+|---|---|
+| `debug-lil-ccgw` | something is misbehaving — symptom → cause, from real failures |
+| `testing-lil-ccgw` | writing or changing tests; the harness is unusual |
+| `review-lil-ccgw` | reviewing a diff or finishing a change |
+| `ccgw-api-contract` | touching `Models.swift` or any gateway call |
+| `menubar-ergonomics` | changing the icon, label, or panel |
+| `install-lil-ccgw` | installing, or diagnosing "it shows nothing" |
+| `release-cask` | cutting a release and updating the Homebrew tap |
+
 ## The gateway is a hard prerequisite
 
 This app is a display and control surface. It owns no data, no budgets, no proxy.
@@ -53,11 +67,13 @@ depends on.
 header against loopback names to defeat DNS rebinding, and a `localhost`
 resolution can arrive as an IPv6 literal it rejects.
 
-**`ccgw stop` does not stop the gateway.** It sends SIGTERM to the pid, and the
-LaunchAgent sets `KeepAlive=true`, so launchd respawns it within about a second.
-A real stop must `launchctl bootout` the agent. This is why `ServiceControl.stop()`
-uses launchctl and why the UI confirms first — booting out also disables
-autostart until `start()` bootstraps it again.
+**Stopping the gateway takes two steps, and each single step fails on its own.**
+`ccgw stop` only SIGTERMs the pid, and `KeepAlive=true` respawns it within a
+second. But `launchctl bootout` **exits 3 and does nothing** when the agent isn't
+loaded — and a gateway process can outlive its agent, at which point neither
+mechanism touches it (verified against a real orphan). So `ServiceControl.stop()`
+unloads the agent first, tolerates exit 3, then terminates whatever still holds
+the port. Order matters: killing before unloading invites a respawn.
 
 **`~/.ccgw/bin/ccgw` is not on `PATH`.** Always invoke it by absolute path.
 
@@ -78,7 +94,12 @@ drift from what the menu bar shows. Never fork it for the preview.
 **Menu bar glyphs must be shape-distinct, not just colour-distinct.** SwiftUI
 renders `MenuBarExtra` labels as template images in most configurations, which
 flattens colour. Each state gets its own SF Symbol so it reads in monochrome,
-with colour as reinforcement.
+with colour reserved for budget consumption.
+
+**The glyph renders into a fixed 20pt slot.** Animation frames are different
+symbols with different natural widths, so without the slot the status item resizes
+on every tick and shoves its neighbours around. Anything wider than the slot is
+silently cropped — `RenderTests` asserts nothing is.
 
 **Retain the status item.** `MenuBarExtra` handles this, but if this ever drops to
 `NSStatusItem`, hold a strong reference — the status bar does not retain items,
@@ -88,9 +109,16 @@ and a deallocated one silently removes its own icon.
 actor; `ServiceControl` runs processes on a background queue. A hung gateway must
 never freeze the menu.
 
-**Gateway-down is a state, not an error.** When the gateway is unreachable the
-HTTP API is unavailable by definition, so recovery routes through launchd. The
-panel swaps Restart for Start rather than showing a failed request.
+**Gateway-down is a state, not an error** — and it is the most important state
+this app has, because Claude Code routes through the gateway and fails every
+request while it's down. The HTTP API is unavailable by definition, so recovery
+routes through launchd. The panel replaces its normal content with a
+consequence-first notice ("Claude Code requests are failing"), a single **Recover**
+action that escalates `kickstart` → `bootstrap` by itself, and **Bypass** as the
+escape hatch — which works precisely because it never contacts the gateway, only
+edits `settings.json`. Polling drops to 5s while down so recovery shows up
+promptly. The app must never exit or crash in this state; that's verified by
+SIGKILLing the gateway and by booting the agent out.
 
 ## Constraints inherited from the signing situation
 
@@ -116,14 +144,18 @@ Hand-rolled harness in `Tests/TestSupport.swift`, ~40 lines, because XCTest and
 swift-testing both want SwiftPM or xcodebuild. It reports file and line and exits
 non-zero on failure — verify that by breaking an assertion, not by trusting it.
 
-338 assertions across four suites:
+457 assertions across six suites. **Read `testing-lil-ccgw` before touching
+tests** — the harness is deliberately unusual and an agent that reaches for XCTest
+will waste an hour.
 
 | Suite | Covers |
 |---|---|
 | `ModelsTests` | decoding (null rates, `degrade`, absent `primary`, epoch-ms), window parsing, title-budget fallback, bumper state, the ceiling rule |
 | `PresentationTests` | currency/rate/duration formatting, title modes, no-data placeholders |
-| `SkitTests` | every pace boundary from both sides, tier precedence, the zen clock, shape-distinctness, animation shape |
+| `SkitTests` | every pace boundary from both sides, tier precedence, the zen clock, animation shape |
 | `DeriveTests` | budget heat, poll intervals, dashboard URL, bumpable filter, launchd targets, error text, accessibility label, registered defaults |
+| `ModelTests` | `GatewayModel` end to end over `MockTransport` — per-section degradation, and the exact request each control issues |
+| `RenderTests` | real SwiftUI geometry via `NSHostingView.fittingSize`, plus rasterised bitmap distinctness |
 
 **Coverage rule: if logic decides something, it gets a test — even when it lives
 inside a `@MainActor` class.** Extract it rather than leaving it unreachable.
@@ -140,16 +172,21 @@ Six mutations are known-caught: hardcoding the soft threshold, dropping the
 poll-interval zero-guard, inverting the ceiling filter, ignoring bump expiry,
 treating epoch ms as seconds, and breaking the launchd target shape.
 
+**SwiftUI hosts inside the test binary**, with no bundle identifier and no host
+app, so UI geometry is asserted rather than assumed. That capability found two
+defects logic tests could not: four tiers whose animation frames resized the
+status item, and three documented widths that were simply wrong.
+
 ### Not unit-tested, deliberately
 
-- **SwiftUI view bodies** (`PanelView`, `SettingsView`, the label's rendered
-  output) — needs a host app. Their *inputs* are all tested instead.
-- **Network and `launchctl`** — `GatewayClient` and `ServiceControl` I/O. Verified
-  by hand against a live gateway, below.
-- **`FrameAnimator` timing** — measured with a probe app rather than asserted;
-  see the ergonomics skill for the numbers.
+- **`launchctl` and `ccgw` process control** — mutates the machine. Verified with a
+  throwaway integration probe that links the real sources; `testing-lil-ccgw` shows
+  the pattern.
+- **`FrameAnimator` timing and CPU cost** — measured with a probe app rather than
+  asserted; see `menubar-ergonomics` for the numbers.
 
-Don't paper over these with mocks that assert the mock.
+The suite must keep passing with the gateway stopped — that's the check that the
+mocks aren't secretly reaching the network.
 
 ## Testing against a live gateway
 

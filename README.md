@@ -89,13 +89,16 @@ it. It falls back to sample data when the gateway is unreachable and says so.
 
 Five formats:
 
-| Mode | Renders |
-|---|---|
-| Spend / limit + window *(default)* | `$20.59/$75 5h` |
-| Spend only | `$20.59` |
-| Icon only | `◐` |
-| Pace | `0.91×` |
-| Statusline | `$20.59/$75 5h │ $34/$1200 30d` |
+| Mode | Renders | Width |
+|---|---|---|
+| Spend / limit + window *(default)* | `$20.59/$75 5h` | 108pt |
+| Spend only | `$20.59` | 61pt |
+| Icon only | icon alone | 20pt |
+| Pace | `0.91×` | 61pt |
+| Statusline | `$20.59/$75 5h │ $34/$1200 30d` | 215pt |
+
+Widths are measured, not estimated, and asserted in the test suite — statusline
+costs over twice the default, which is why it isn't one.
 
 The tracked budget defaults to whichever one the gateway nominates as primary —
 the 5-hour window, unless you pick another in Display.
@@ -136,7 +139,7 @@ through all eight stages either way.
 |---|---|
 | **Restart** | `POST /api/restart` — drains in-flight requests, then launchd respawns it |
 | **Pause** | Pauses budget enforcement for N minutes; the gateway auto-resumes |
-| **Stop** | `launchctl bootout` — confirms first |
+| **Stop** | `launchctl bootout`, then terminates any surviving listener — confirms first |
 | **Bypass** | Unwires `ANTHROPIC_BASE_URL` so Claude Code goes direct |
 | **+ bumper** | Adds a temporary allowance to one budget, per row |
 
@@ -153,12 +156,43 @@ sustainable pace for the rest of the window drops to match.
 Stop uses `bootout` rather than `ccgw stop` because the LaunchAgent sets
 `KeepAlive=true` — a plain SIGTERM gets respawned within the second, so the
 button would look broken. Booting out also unloads the agent, which means the
-gateway won't return at login until you press Start.
+gateway won't return at login until you recover it.
+
+`bootout` alone isn't sufficient either: it exits 3 and does nothing when the
+agent isn't loaded, and a gateway process can outlive its agent. So Stop unloads
+first, then terminates whatever is still listening on the port — verified against
+a real orphaned process that neither `bootout` nor `ccgw stop` could kill.
 
 Stop and Bypass both confirm first, and the confirmation says what breaks:
 Claude Code points at this gateway, so a stopped gateway means every request
 fails with connection refused. Bypass takes effect on the **next** Claude Code
 start, not immediately.
+
+## When the gateway dies
+
+Claude Code sends every request through the gateway, so a dead gateway means
+every request fails with connection refused. This app is the thing that tells you
+why, and it's built not to become another casualty.
+
+- **It never exits.** Verified by SIGKILLing the gateway and by booting the agent
+  out: the app keeps the same PID, logs no crash report, and keeps polling.
+- **The icon switches to a warning triangle** and the panel leads with *"Claude
+  Code requests are failing"* — the consequence, not the technical state — then
+  names the address it tried, so a wrong port is diagnosable at a glance.
+- **It retries every 5 seconds while down** instead of the usual 30, so recovery
+  shows up almost immediately. A refused connection costs microseconds.
+- **A notification fires once** when the gateway drops, if you've enabled it.
+
+Two ways out, both in the panel:
+
+| | |
+|---|---|
+| **Recover gateway** | Escalates by itself: `launchctl kickstart` if the agent is loaded, `bootstrap` if it isn't, and reports what it tried plus the log path if both fail. You don't need to know which case you're in. |
+| **Bypass** | Unwires `ANTHROPIC_BASE_URL` so Claude Code talks to the API directly. **This works while the gateway is down** — it's pure `settings.json` editing and never contacts the gateway. Budgets stop being enforced and it takes effect on the next Claude Code start. |
+
+A plain crash usually self-heals: the LaunchAgent sets `KeepAlive=true`, so the
+gateway is back within a couple of seconds and the icon follows. Recovery is for
+the cases that don't — a wedged process, or an agent that was booted out.
 
 ## Tests
 
@@ -166,7 +200,7 @@ start, not immediately.
 scripts/test.sh
 ```
 
-338 assertions over the parts that fail *quietly* — where being wrong produces
+457 assertions over the parts that fail *quietly* — where being wrong produces
 plausible output rather than an error: decoding the gateway's payloads (null
 rates, the `degrade` action, a missing `primary`, epoch-ms timestamps), every
 pace boundary from both sides, the bumper's ceiling rule, budget-window parsing,
@@ -177,9 +211,20 @@ The suite is mutation-checked: breaking the source has to turn it red. Six known
 mutations are caught, including hardcoding the soft threshold, ignoring bump
 expiry, and treating epoch milliseconds as seconds.
 
-SwiftUI view bodies, network I/O, and `launchctl` calls are not unit-tested —
-they'd need a host app or a live gateway, and mocking them would only assert the
-mock. Those are checked by hand against a running gateway instead.
+Rendering is tested too. SwiftUI hosts inside the plain test binary, so
+`NSHostingView.fittingSize` and `ImageRenderer` give real geometry: the suite
+pins each title mode's width, requires every tier's animation frames to measure
+identically, checks no glyph outgrows its slot, and hashes the rendered bitmaps
+so eight tiers must actually look different rather than merely be named
+differently.
+
+The gateway itself is mocked at the transport boundary, which lets the suite
+assert **what the app sends** — the method, path, and JSON body of every control
+action, and that the spend breakdown is requested over the tracked budget's
+window. Wrong-request bugs are invisible if you only check responses.
+
+`launchctl` calls remain hand-verified against a live agent; the rest of the
+suite runs with the gateway stopped and produces identical results.
 
 ## Comparing against Anthropic's usage page
 

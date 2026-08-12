@@ -106,19 +106,52 @@ When the gateway is unreachable the preview falls back to
 `MenuBarLabel.sampleSnapshot()` and **says so in the UI**. Showing zeros as
 though they were live is worse than showing nothing.
 
-## Width
+## Width — measured, not estimated
 
-Menu bar space is contested — other extras, and the notch on laptop displays.
+Menu bar space is contested (other extras, the notch), so these are real numbers
+from `NSHostingView.fittingSize` with the sample snapshot, asserted in
+`RenderTests.swift`. An earlier version of this section carried estimates that
+were wrong by up to 20pt.
 
-- Icon-only ≈ 22pt (`NSSquareStatusItemLength` equivalent).
-- Text modes use variable width; keep them short and `monospacedDigit()` so the
-  item does not jitter as digits change.
-- The statusline mode is ~190pt. It is offered because parity with the Claude
-  Code statusline is genuinely useful, but it is **not** the default for this
-  reason.
+| Mode | Width | Renders |
+|---|---|---|
+| Icon only | 20pt | glyph in a fixed slot |
+| Spend only | 61pt | `$9.34` |
+| Pace | 61pt | `0.32×` |
+| **Spend / limit + window** (default) | **108pt** | `$9.34/$75 5h` |
+| Statusline | 215pt | `$9.34/$75 5h │ $23/$1200 30d` |
 
-Never let width vary with every poll. `monospacedDigit()` on all numerals is what
-prevents that.
+Statusline is genuinely wide — over twice the default — which is why parity with
+the Claude Code statusline is offered but not the default.
+
+### The glyph gets a fixed-width slot
+
+`MenuBarLabel.glyphSlotWidth` is 20pt and the icon renders into
+`.frame(width:)`, not at its natural size. This is load-bearing, and it was a
+real bug before the fix:
+
+> Each tier animates between two *different* SF Symbols, and different symbols
+> measure differently. Natural widths differed by up to 6pt (`payday` 20→14,
+> `zen` 18→13, `crit` 13→16, `melt` 15→13), so the status item resized on every
+> animation tick and shoved its menu bar neighbours sideways several times a
+> second — during `crit` and `melt`, exactly when the icon most needs to be
+> readable.
+
+20pt because it's the widest glyph any state uses (`party.popper.fill`); 16pt
+clipped both that and `figure.mind.and.body` at 18. **A new glyph wider than the
+slot is silently cropped**, so `RenderTests` asserts nothing outgrows it.
+
+### What `monospacedDigit()` actually buys
+
+It equalises the *advance width of digit glyphs*, so `$11.11` and `$88.88`
+render identically. It does **not** stop the item growing as the number gains
+characters: `$9.34/$75 5h` is 108pt and `$100.00/$75 5h` is ~120pt. Earlier
+wording here claimed it prevented width variation outright — it doesn't, and no
+formatting choice can, short of padding to a fixed character count.
+
+The rule that matters: **width must never change between two renders of the same
+data.** Frame swaps and digit shapes are covered; genuine growth as spend climbs
+is acceptable and bounded by a test.
 
 ## Status item lifetime
 
