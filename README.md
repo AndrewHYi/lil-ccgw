@@ -32,6 +32,9 @@ enforcement  on
 Dashboard  Settings…            Quit
 ```
 
+[`docs/architecture.md`](docs/architecture.md) covers where the numbers come from
+and how often they refresh.
+
 ## ccgw has to be running first
 
 This app displays and controls ccgw. It holds no data of its own, so with no

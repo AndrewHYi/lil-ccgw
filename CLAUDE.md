@@ -45,6 +45,11 @@ Load the one that matches the task before improvising:
 | `install-lil-ccgw` | installing, or diagnosing "it shows nothing" |
 | `release-cask` | cutting a release and updating the Homebrew tap |
 
+## Orientation
+
+[`docs/architecture.md`](docs/architecture.md) covers the data flow and polling,
+without UI detail. Start there if you haven't worked in this repo.
+
 ## The gateway is a hard prerequisite
 
 This app is a display and control surface. It owns no data, no budgets, no proxy.
