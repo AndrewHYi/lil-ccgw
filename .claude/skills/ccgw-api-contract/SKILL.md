@@ -143,6 +143,26 @@ The same endpoint also accepts `budgets`, `soft_threshold_pct`, `admission`,
 effort/model governors are deliberate-decision surfaces that belong to the
 dashboard and `/gateway:budget`, not a glance-and-click menu.
 
+## What the API cannot do
+
+**There is no `/api/stop` and no `/api/start`.** Don't go looking, and don't invent
+one. A restart is a request the server can survive answering; a start is one it
+can't, because a dead process cannot accept the request telling it to come alive.
+
+Gateway lifecycle therefore lives entirely outside HTTP, in `ServiceControl.swift`:
+
+| Need | Mechanism |
+|---|---|
+| stop | `launchctl bootout <service-target>`, then kill any surviving listener |
+| start | `launchctl bootstrap <domain-target> <plist>` |
+| restart a wedged process | `launchctl kickstart -k <service-target>` |
+| unwire / re-wire Claude Code | `~/.ccgw/bin/ccgw bypass` / `wire` |
+
+`POST /api/restart` is the one lifecycle action that *is* HTTP, and only because the
+gateway is alive to answer it. Everything else must keep working when the API does
+not — that is the whole reason the app has a second, subprocess-based control
+channel.
+
 ## Not used, and why
 
 | Endpoint | Why not |

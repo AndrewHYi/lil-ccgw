@@ -146,13 +146,23 @@ through all eight stages either way.
 
 ## Controls
 
-| | |
-|---|---|
-| **Restart** | `POST /api/restart` — drains in-flight requests, then launchd respawns it |
-| **Pause** | Pauses budget enforcement for N minutes; the gateway auto-resumes |
-| **Stop** | `launchctl bootout`, then terminates any surviving listener — confirms first |
-| **Bypass** | Unwires `ANTHROPIC_BASE_URL` so Claude Code goes direct |
-| **+ bumper** | Adds a temporary allowance to one budget, per row |
+Two kinds of control, and it matters which is which. The first three go over HTTP
+and need the gateway alive. The rest are subprocesses, so they work when it's dead —
+which is when you need them.
+
+| Button | Mechanism | Effect |
+|---|---|---|
+| **Restart** | `POST /api/restart` | Drains in-flight requests, then launchd respawns it |
+| **Pause** | `PUT /api/budgets` | Pauses enforcement for N minutes; auto-reverts |
+| **+ bumper** | `PUT /api/budgets` | Temporary extra allowance on one budget, per row |
+| **Recover** | `launchctl kickstart`, then `bootstrap` | Brings the gateway back; escalates by itself. Replaces Restart while it's down |
+| **Stop** | `launchctl bootout`, then kill the listener | Real stop — confirms first |
+| **Bypass** | `ccgw bypass` | Unwires `ANTHROPIC_BASE_URL` so Claude Code goes direct |
+| **Re-wire** | `ccgw wire` | Puts `ANTHROPIC_BASE_URL` back |
+
+There is no `/api/stop` or `/api/start`, which is why the bottom four shell out
+instead. A dead process can't accept a request telling it to come alive.
+[`docs/architecture.md`](docs/architecture.md) has the exact commands.
 
 Each budget row carries its own bumper: **+ bumper** opens an inline amount and
 duration form, an active one shows as `+$50.00 until 7:41 PM` with the base limit
