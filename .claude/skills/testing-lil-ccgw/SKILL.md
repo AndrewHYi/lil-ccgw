@@ -44,6 +44,52 @@ Failures print `file:line`. `T.report()` returns the exit code.
 | `DeriveTests` | budget heat, poll cadence, URLs, launchd targets, defaults |
 | `ModelTests` | `GatewayModel` end to end over `MockTransport` |
 | `RenderTests` | real SwiftUI geometry and rasterised output |
+| `ViewTests` | panel, settings panes and help rendered in every reachable state |
+| `PanelDeriveTests` | the panel's colour and breakdown decisions |
+| `ServiceControlTests` | launchd and CLI control over a fake process environment |
+| `RecoveryTests` | `recover()`'s escalation, stop's note ordering |
+| `NotifierRuleTests` | the fire-once-and-re-arm rule |
+| `TransportTests` | request building, response mapping, notifier explanations |
+| `WindowTests` | the two window helpers call their injected open action |
+| `GapTests` | odds and ends coverage showed nothing had ever executed |
+
+Add a suite by writing a global `func runFooTests()` in `Tests/FooTests.swift` and
+calling it from `Tests/main.swift` before `exit(T.report())`. `test.sh` globs the
+file automatically, but nothing discovers the function — an uncalled suite
+compiles, runs nothing, and reports success.
+
+## Measure coverage rather than counting assertions
+
+```sh
+scripts/test.sh --coverage         # per-file line coverage
+scripts/test.sh --gate             # fail on a per-file regression
+scripts/test.sh --coverage --update-floors
+```
+
+`swiftc` accepts the same `-profile-generate -profile-coverage-mapping` flags
+SwiftPM would pass, and `llvm-profdata`/`llvm-cov` ship with the Command Line
+Tools — so the no-manifest constraint never precluded this. Nobody had tried.
+
+The floors in `scripts/coverage-floors.txt` are a ratchet, not a target. A hard
+100% gate would be permanently red and therefore ignored; a floor fails only on a
+drop. **Never lower one to make a run green.** That file also records, per file,
+why it does not read 100 and what covering the rest would cost.
+
+Trust the measured number over the assertion count. Two files totalling 789 lines
+sat entirely untested while the count read a healthy 457.
+
+## Four seams exist for tests; use them rather than adding a fifth
+
+| Seam | Reaches |
+|---|---|
+| `GatewayClient(transport:)` | every request the app issues, and what it sends |
+| `GatewayClient(token:)` | the `X-CCGW-Token` rule, without depending on `~/.ccgw/token` existing |
+| `GatewayModel(settle:)` | lifecycle actions without their real multi-second waits |
+| `ServiceControl.environment` | `launchctl`, `lsof`, `/bin/kill` and the ccgw CLI, without spawning any |
+
+Always restore `ServiceControl.environment` in a `defer`. A leaked fake makes
+later suites spawn nothing; worse, a leaked *real* one makes them spawn
+`launchctl` against the machine running the tests.
 
 ## Fixtures are captured from a live gateway
 

@@ -240,12 +240,22 @@ the cases that don't — a wedged process, or an agent that was booted out.
 scripts/test.sh
 ```
 
-457 assertions over the parts that fail *quietly* — where being wrong produces
+661 assertions over the parts that fail *quietly* — where being wrong produces
 plausible output rather than an error: decoding the gateway's payloads (null
 rates, the `degrade` action, a missing `primary`, epoch-ms timestamps), every
 pace boundary from both sides, the bumper's ceiling rule, budget-window parsing,
 soft-threshold colour, launchd target strings, formatting, and the glyph each
 state maps to.
+
+Coverage is measured rather than inferred from that count, which is how two files
+totalling 789 lines once sat at zero while the count looked healthy:
+
+```sh
+scripts/test.sh --coverage    # 86% of lines; --gate fails on a regression
+```
+
+`scripts/coverage-floors.txt` records the per-file floors and, for each file that
+does not read 100, what covering the rest would actually cost.
 
 The suite is mutation-checked: breaking the source has to turn it red. Six known
 mutations are caught, including hardcoding the soft threshold, ignoring bump

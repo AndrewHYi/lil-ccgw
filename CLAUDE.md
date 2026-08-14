@@ -195,9 +195,13 @@ Hand-rolled harness in `Tests/TestSupport.swift`, ~40 lines, because XCTest and
 swift-testing both want SwiftPM or xcodebuild. It reports file and line and exits
 non-zero on failure — verify that by breaking an assertion, not by trusting it.
 
-457 assertions across six suites. **Read `testing-lil-ccgw` before touching
-tests** — the harness is deliberately unusual and an agent that reaches for XCTest
-will waste an hour.
+661 assertions across fourteen suites, covering 86% of lines. **Read
+`testing-lil-ccgw` before touching tests** — the harness is deliberately unusual
+and an agent that reaches for XCTest will waste an hour.
+
+Prefer the measured number to the assertion count: `scripts/test.sh --coverage`.
+An assertion count says nothing about what is reached, which is how two files
+totalling 789 lines sat at zero while the count read 457.
 
 | Suite | Covers |
 |---|---|
@@ -207,6 +211,14 @@ will waste an hour.
 | `DeriveTests` | budget heat, poll intervals, dashboard URL, bumpable filter, launchd targets, error text, accessibility label, registered defaults |
 | `ModelTests` | `GatewayModel` end to end over `MockTransport` — per-section degradation, and the exact request each control issues |
 | `RenderTests` | real SwiftUI geometry via `NSHostingView.fittingSize`, plus rasterised bitmap distinctness |
+| `ViewTests` | the panel, settings panes and help window rendered in every reachable state |
+| `PanelDeriveTests` | the panel's colour and breakdown decisions, including the pace bands copied from the dashboard |
+| `ServiceControlTests` | launchd and CLI control over a fake process environment — the two-step stop, exit code 3, `lsof` parsing |
+| `RecoveryTests` | `recover()`'s kickstart→bootstrap escalation, and stop's note-after-refresh ordering |
+| `NotifierRuleTests` | the fire-once-and-re-arm rule, asserted on what it decides to send |
+| `TransportTests` | request building and response mapping, plus every notifier explanation branch |
+| `WindowTests` | the two window helpers call their injected open action exactly once |
+| `GapTests` | odds and ends coverage measurement showed nothing had ever executed |
 
 **Coverage rule: if logic decides something, it gets a test — even when it lives
 inside a `@MainActor` class.** Extract it rather than leaving it unreachable.
