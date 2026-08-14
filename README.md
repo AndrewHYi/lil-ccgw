@@ -59,6 +59,18 @@ brew install --cask AndrewHYi/tap/lil-ccgw
 
 Upgrade with `brew upgrade --cask AndrewHYi/tap/lil-ccgw`.
 
+### From the Releases page
+
+Prefer brew if you can. The app is ad-hoc signed — there's no Developer ID on
+the build machine, so it can't be notarized — and the cask handles that by
+stripping the quarantine flag after installing. Download the zip directly and
+nothing strips it, so Gatekeeper refuses to open the app and says it's damaged.
+It isn't; it's just unnotarized. Clear the flag yourself:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/lil-ccgw.app
+```
+
 ### From source
 
 Needs the Swift toolchain from Command Line Tools; Xcode is not required.

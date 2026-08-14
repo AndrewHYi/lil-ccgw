@@ -82,6 +82,16 @@ scripts/build.sh --universal  # arm64 + x86_64, for release
 open dist/lil-ccgw.app
 ```
 
+`--universal` fails if the x86_64 slice cannot be cross-compiled, because an
+arm64-only bundle installs fine on an Intel Mac and then cannot exec.
+`--allow-single-arch` overrides that for local builds only; never for a release.
+
+`scripts/verify-cask.sh` installs the cask end to end inside a throwaway
+Homebrew prefix, so it never touches the real `/Applications`, Caskroom, or
+preferences. Run it before any release. Its header records two non-obvious
+things worth reading before changing it: why a Linux container cannot do this
+job at all, and the fact that `$HOME` isolates Homebrew but not `NSUserDefaults`.
+
 A file named `main.swift` would be treated as top-level code and collide with
 `@main`; the entry point lives in `LilCcgwApp.swift` and the build passes
 `-parse-as-library`.

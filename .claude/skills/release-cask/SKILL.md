@@ -1,7 +1,7 @@
 ---
 name: release-cask
-description: Cut a lil-ccgw release and update its Homebrew cask — build universal, assemble the app, zip, sha256, GitHub release, then bump version and sha in the tap. Use when releasing a new version or when the cask is out of date.
-argument-hint: "<version>  e.g. 0.2.0"
+description: Cut a lil-ccgw release and update its Homebrew cask — build universal, assemble the app, zip, sha256, GitHub release, verify the install in a clean room, then bump version and sha in the tap. Use when releasing a new version or when the cask is out of date.
+argument-hint: "<version>  e.g. 0.3.0"
 ---
 
 # Release and publish the cask
@@ -27,16 +27,15 @@ fine while private, and is the right answer until that decision is made.
 
 ```sh
 git -C . status --porcelain          # must be clean
+scripts/test.sh                     # must pass
 scripts/build.sh --universal        # must succeed
 ```
 
-Confirm the built binary is genuinely universal — the build script warns and
-falls back to a single slice if the x86_64 cross-compile fails, and shipping a
-single-arch binary as universal is a silent regression:
-
-```sh
-lipo -archs dist/lil-ccgw.app/Contents/MacOS/lil-ccgw   # expect: x86_64 arm64
-```
+`--universal` now exits non-zero if the x86_64 slice cannot be built, so a
+single-arch bundle can no longer reach a release by way of a warning nobody
+read. **Never pass `--allow-single-arch` here** — that flag exists for local
+builds, and an arm64-only release installs cleanly on an Intel Mac and then
+cannot exec at all.
 
 Launch it once and confirm the menu bar item appears and the panel reads live
 numbers.
@@ -68,6 +67,11 @@ Record that sha256 — the cask needs it.
 
 ## 4. GitHub release
 
+This is the first irreversible, outward-facing step: a pushed tag and a
+published release are visible immediately and awkward to retract. **Confirm
+before running it**, per CLAUDE.md's rule about outward-facing actions, even
+though ordinary commits and pushes in this repo need no permission.
+
 ```sh
 git push origin main --tags
 gh release create "v$ARGUMENTS" \
@@ -79,46 +83,25 @@ gh release create "v$ARGUMENTS" \
 ## 5. Tap
 
 The tap is `AndrewHYi/homebrew-tap` (repo name `homebrew-tap`, referenced as
-`AndrewHYi/tap`). **It does not exist yet** — create it once:
+`AndrewHYi/tap`). It already exists and is public. It is tapped locally, so the
+live cask is readable on disk — **edit that, do not retype it from memory:**
 
 ```sh
-gh repo create AndrewHYi/homebrew-tap --public \
-  --description "Homebrew tap for AndrewHYi's tools"
+cat /opt/homebrew/Library/Taps/andrewhyi/homebrew-tap/Casks/lil-ccgw.rb
 ```
 
-`Casks/lil-ccgw.rb`:
+A release changes exactly two lines, `version` and `sha256`. Everything else —
+the `depends_on`, the `postflight` that strips `com.apple.quarantine`, the `zap`
+list — is already correct and should be left alone. This file used to inline a
+full copy of the cask, which promptly drifted from the real one in three ways at
+once (a stale version, a `">= :sonoma"` that the tap had already corrected to a
+bare symbol, and a claim the tap did not exist). Pointing at the source of truth
+is the fix.
 
-```ruby
-cask "lil-ccgw" do
-  version "0.2.0"
-  sha256 "<sha256 from step 3>"
+Then commit and push the tap. That is a second repo and an outward-facing
+publish — see the note in step 4.
 
-  url "https://github.com/AndrewHYi/lil-ccgw/releases/download/v#{version}/lil-ccgw-#{version}.zip"
-  name "lil-ccgw"
-  desc "Menu bar app for the ccgw Claude Code cost gateway"
-  homepage "https://github.com/AndrewHYi/lil-ccgw"
-
-  depends_on macos: ">= :sonoma" # macOS 14
-
-  app "lil-ccgw.app"
-
-  # The app is ad-hoc signed — there is no Developer ID on the build machine, so
-  # notarization is impossible and Gatekeeper would otherwise refuse to launch
-  # it. Stripping the quarantine attribute is the same posture AeroSpace takes.
-  postflight do
-    system_command "/usr/bin/xattr",
-                   args: ["-dr", "com.apple.quarantine", "#{appdir}/lil-ccgw.app"],
-                   sudo: false
-  end
-
-  zap trash: [
-    "~/Library/Preferences/com.andrewhyi.lil-ccgw.plist",
-  ]
-end
-```
-
-Reference implementation to copy patterns from — already on disk if AeroSpace is
-installed:
+Reference implementation for cask patterns, on disk if AeroSpace is installed:
 
 ```sh
 cat /opt/homebrew/Library/Taps/nikitabobko/homebrew-tap/Casks/aerospace.rb
@@ -127,24 +110,45 @@ cat /opt/homebrew/Library/Taps/nikitabobko/homebrew-tap/Casks/aerospace.rb
 ## 6. Verify the install path
 
 ```sh
-brew untap AndrewHYi/tap 2>/dev/null
-brew tap AndrewHYi/tap
-brew install --cask AndrewHYi/tap/lil-ccgw
-open /Applications/lil-ccgw.app          # must launch with no Gatekeeper prompt
-brew uninstall --cask lil-ccgw           # must remove cleanly
+scripts/verify-cask.sh --zap
 ```
 
-If Gatekeeper still complains, the `postflight` `xattr` did not run — check the
-path in the cask matches the actual `.app` name inside the zip.
+This builds, packages, installs, launches, uninstalls and zaps the cask inside a
+throwaway Homebrew prefix with its own Caskroom and `--appdir`, then asserts the
+real `/Applications` bundle and Caskroom were untouched. It replaces the old
+untap/tap/install-into-your-own-machine round trip, which mutated the machine
+being released from and checked the result by eye.
+
+It asserts what that checklist only looked at: both architectures survive into
+the *installed* binary, the signature survives the `ditto` round trip, no
+`com.apple.quarantine` remains, the version matches, the app actually launches,
+and the zap stanza removes the plist it names.
+
+Note it does **not** use `spctl --assess`. An ad-hoc signed app always fails
+that. Gatekeeper only enforces on quarantined files, so the absence of the
+quarantine attribute is the assertion that means anything here.
+
+Run it against the tag you are about to ship, before touching the tap. If the
+sha256 it prints differs from the one you put in the cask, the cask is wrong.
 
 ## Checklist
 
 - [ ] Repo/releases public (or explicitly decided otherwise, and stopped here)
-- [ ] Working tree clean
+- [ ] Working tree clean, `scripts/test.sh` green
 - [ ] Tagged **before** building the shipped artifact
-- [ ] `lipo -archs` shows both arches
 - [ ] Version in `Info.plist` matches the tag
 - [ ] Zipped with `ditto`, not `zip`
-- [ ] sha256 in the cask matches the uploaded asset
-- [ ] `brew install --cask` launches without a Gatekeeper prompt
-- [ ] `brew uninstall --cask` removes it
+- [ ] `scripts/verify-cask.sh --zap` passes
+- [ ] sha256 in the cask matches the one `verify-cask.sh` printed
+- [ ] Only `version` and `sha256` changed in the tap
+- [ ] Confirmed before pushing the tag, the release, and the tap
+
+Most of what this list used to check by hand is now asserted by
+`verify-cask.sh`. What is left is the part a script cannot do: deciding to
+publish, and keeping the two repos in step.
+
+## After the release
+
+`brew upgrade --cask AndrewHYi/tap/lil-ccgw` on the release machine, so the
+installed app is the one that was just shipped rather than a stale build. The
+menu bar item has to be quit and relaunched to pick it up.
