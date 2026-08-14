@@ -195,7 +195,7 @@ Hand-rolled harness in `Tests/TestSupport.swift`, ~40 lines, because XCTest and
 swift-testing both want SwiftPM or xcodebuild. It reports file and line and exits
 non-zero on failure — verify that by breaking an assertion, not by trusting it.
 
-661 assertions across fourteen suites, covering 86% of lines. **Read
+708 assertions across fourteen suites, covering 90% of lines. **Read
 `testing-lil-ccgw` before touching tests** — the harness is deliberately unusual
 and an agent that reaches for XCTest will waste an hour.
 

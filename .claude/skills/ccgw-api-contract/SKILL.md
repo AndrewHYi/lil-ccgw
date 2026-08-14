@@ -125,6 +125,18 @@ Mutating. A temporary extra allowance on one budget:
 - **Bumps stack.** Re-bumping an active bumper *adds* to it and keeps the later
   expiry, so topping up never needs a clear first. Verified live: $50 + $10 → $60
   with the original expiry intact.
+- **There is no set verb, and that makes lowering a bumper dangerous.** Since a
+  bump only ever adds, the only way *down* is `clear` then a fresh `amount_usd`.
+  In the gap between those two calls the budget sits at its bare `limit_usd`, so
+  if `spent_usd` has already passed that limit the gateway blocks every request
+  until the second call lands. Issue them back to back with nothing awaited
+  between — `GatewayModel.setBump` does this inside a single `perform`. The
+  residual risk is unavoidable from the client: if the clear succeeds and the
+  re-bump is refused, the budget is left with no bumper at all.
+- **Re-bumping restarts the clock.** A bump issued without `minutes` expires a
+  full window from *now*, so replacing an amount silently extends the duration
+  unless the remaining minutes are passed explicitly
+  (`Derive.remainingBumpMinutes`).
 - `effective_limit_usd` then includes the bump; derive the base by subtracting
   `bump_usd`, or a bumped budget looks permanently larger than configured.
 - `bump_usd` outlives its expiry in config, so **`bump_expires_at` is the
