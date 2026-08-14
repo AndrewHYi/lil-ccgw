@@ -159,7 +159,7 @@ one or the other:
 | Pause, `+ bumper` | `PUT /api/budgets` |
 | Recover / Start | `launchctl kickstart -k gui/$UID/io.ccgw.gateway`, falling back to `launchctl bootstrap gui/$UID …/io.ccgw.gateway.plist` |
 | Stop | `launchctl bootout gui/$UID/io.ccgw.gateway`, then `/bin/kill <pid>` if anything still holds the port |
-| Bypass / Re-wire | `~/.ccgw/bin/ccgw bypass` / `wire` — edits `settings.json` |
+| Bypass / Reconnect | `~/.ccgw/bin/ccgw bypass` / `wire` — edits `settings.json` |
 
 HTTP handles *change your behaviour*, and works only while the gateway is alive.
 Subprocesses handle *exist, or stop existing*, and work when it's dead — which is
