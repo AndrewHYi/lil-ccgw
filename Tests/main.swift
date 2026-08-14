@@ -33,6 +33,9 @@ await runViewTests()
 // launchctl, so the suite still runs with the gateway stopped.
 await runServiceControlTests()
 
+// The model's lifecycle actions, on the same fake environment.
+await runRecoveryTests()
+
 // Model tests are async and main-actor isolated. Top-level `await` in main.swift
 // is the pattern that works here — a DispatchSemaphore around a @MainActor task
 // deadlocks, because blocking the main thread starves the actor it's waiting on.

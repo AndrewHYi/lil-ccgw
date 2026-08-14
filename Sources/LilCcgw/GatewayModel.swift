@@ -73,9 +73,23 @@ final class GatewayModel {
 
     /// `client` is injectable for tests; production uses the default, which
     /// talks to loopback over URLSession.
-    init(client: GatewayClient = GatewayClient()) {
+    ///
+    /// `settle` is the pause after a lifecycle action, before the first poll that
+    /// checks whether it worked — the gateway drains in-flight requests on the way
+    /// out and launchd takes a moment to bring it back. It is injectable purely
+    /// for test speed: `recover()` alone waits five seconds, and honouring that
+    /// would make it slower than the rest of the suite together.
+    init(
+        client: GatewayClient = GatewayClient(),
+        settle: @escaping @Sendable (Duration) async -> Void = {
+            try? await Task.sleep(for: $0)
+        }
+    ) {
         self.client = client
+        self.settle = settle
     }
+
+    private let settle: @Sendable (Duration) async -> Void
 
     // MARK: - Derived state
 
@@ -258,7 +272,7 @@ final class GatewayModel {
             }
             // The gateway drains in-flight requests before exiting, so give the
             // supervisor a moment before the first health poll.
-            try? await Task.sleep(for: .seconds(2))
+            await self.settle(.seconds(2))
         }
     }
 
@@ -303,7 +317,7 @@ final class GatewayModel {
         if loaded {
             attempts.append("kickstart")
             try? await ServiceControl.kickstartRestart()
-            try? await Task.sleep(for: .seconds(2))
+            await settle(.seconds(2))
             await refresh()
             if !isDown { lastError = nil; return }
         }
@@ -318,7 +332,7 @@ final class GatewayModel {
             lastError = "Recovery failed (\(attempts.joined(separator: " → "))): \(error.localizedDescription)"
             return
         }
-        try? await Task.sleep(for: .seconds(3))
+        await settle(.seconds(3))
         await refresh()
 
         if isDown {
@@ -336,7 +350,7 @@ final class GatewayModel {
         var failure: String?
         do {
             note = try await ServiceControl.stop()
-            try? await Task.sleep(for: .seconds(1))
+            await settle(.seconds(1))
         } catch {
             failure = error.localizedDescription
         }
@@ -349,7 +363,7 @@ final class GatewayModel {
     func startGateway() async {
         await perform {
             try await ServiceControl.start()
-            try? await Task.sleep(for: .seconds(2))
+            await self.settle(.seconds(2))
         }
     }
 
