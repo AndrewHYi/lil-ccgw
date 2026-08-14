@@ -335,6 +335,48 @@ enum Derive {
         all.filter { !$0.isCeiling(among: all) }
     }
 
+    /// The cap a bumper produces: the budget's own limit with the bumper on top.
+    ///
+    /// The panel shows this beside both amount fields because it is the number
+    /// the user is reasoning about, while the field they type into is a delta.
+    /// Typing 2210 and being surprised by a $2285 cap is exactly the gap this
+    /// closes. A negative bump is treated as none rather than subtracting: the
+    /// gateway has no such thing, so rendering one would be a lie.
+    static func resultingCap(base: Double, bump: Double) -> Double {
+        base + max(0, bump)
+    }
+
+    /// Why a proposed cap is dangerous, or nil when it is not.
+    ///
+    /// A cap at or below what the window has already spent leaves no headroom,
+    /// so the gateway starts blocking the instant it is applied. That is a
+    /// legitimate thing to want — it is the fastest "stop me now" this app has —
+    /// so this warns and lets it through rather than forbidding it.
+    static func bumpWarning(cap: Double, spent: Double) -> String? {
+        guard cap <= spent else { return nil }
+        return "below the \(Fmt.usd(spent)) already spent — requests block immediately"
+    }
+
+    /// Whole minutes left on a bumper, for re-issuing it without moving its
+    /// expiry.
+    ///
+    /// Reducing a bumper means clearing it and bumping again, and a plain
+    /// re-bump restarts the clock — so changing the *amount* would silently
+    /// extend the *duration*. Returns nil when no bumper is live, which makes
+    /// the caller omit `minutes` and get the budget's own window, the gateway's
+    /// documented default.
+    ///
+    /// Truncates rather than rounds, so re-issuing can only ever shorten a
+    /// bumper by under a minute, never extend it. The bounds mirror the
+    /// gateway's own 5…10080 clamp: a value outside them would come back
+    /// silently changed, which is worse than clamping here where it is visible.
+    static func remainingBumpMinutes(expiresAt: Date?, now: Date = Date()) -> Int? {
+        guard let expiresAt else { return nil }
+        let seconds = expiresAt.timeIntervalSince(now)
+        guard seconds > 0 else { return nil }
+        return min(10_080, max(5, Int(seconds / 60)))
+    }
+
     /// The launchd service target for the gateway agent. A typo here means Stop
     /// and Start silently do nothing, so it is asserted rather than trusted.
     static func serviceTarget(uid: UInt32, label: String) -> String {

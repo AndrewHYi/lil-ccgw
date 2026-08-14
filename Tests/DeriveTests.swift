@@ -120,6 +120,60 @@ func runDeriveTests() {
         T.equal(Derive.bumpableBudgets([]).count, 0, "empty list stays empty")
     }
 
+    T.suite("the cap a bumper produces") {
+        // The whole point of showing this: the field takes a delta, the user
+        // thinks in caps. $75 base + $2210 typed is the $2285 that started this.
+        T.close(Derive.resultingCap(base: 75, bump: 2210), 2285, "base plus bump")
+        T.close(Derive.resultingCap(base: 75, bump: 125), 200, "the corrected figure")
+        T.close(Derive.resultingCap(base: 75, bump: 0), 75, "no bump is the base")
+
+        // A negative bump would render a cap below the configured limit, which
+        // the gateway cannot produce — clamping keeps the preview honest.
+        T.close(Derive.resultingCap(base: 75, bump: -50), 75, "negative bump does not subtract")
+    }
+
+    T.suite("warning when a cap lands under what is already spent") {
+        T.expect(Derive.bumpWarning(cap: 200, spent: 126.32) == nil, "headroom left, no warning")
+        T.expect(Derive.bumpWarning(cap: 126.33, spent: 126.32) == nil, "a cent of headroom is enough")
+
+        // Both sides of the boundary. Equal counts as dangerous: nothing is
+        // left, so the next request blocks.
+        T.expect(Derive.bumpWarning(cap: 126.32, spent: 126.32) != nil, "exactly spent warns")
+        T.expect(Derive.bumpWarning(cap: 75, spent: 126.32) != nil, "under spend warns")
+
+        // The text reaches the panel, so it has to name the number and the
+        // consequence rather than saying "invalid".
+        let warning = Derive.bumpWarning(cap: 75, spent: 126.32) ?? ""
+        T.expect(warning.contains("$126.32"), "names the amount already spent")
+        T.expect(warning.contains("block"), "states the consequence")
+    }
+
+    T.suite("re-issuing a bumper keeps its expiry") {
+        let now = Date(timeIntervalSince1970: 1_786_756_000)
+
+        // Reducing a bumper is clear-then-re-bump, and a bare re-bump restarts
+        // the clock. Passing the remaining minutes is what stops a change of
+        // amount from silently becoming a change of duration.
+        T.equal(Derive.remainingBumpMinutes(expiresAt: now.addingTimeInterval(3600), now: now),
+                60, "an hour left is 60 minutes")
+        T.equal(Derive.remainingBumpMinutes(expiresAt: now.addingTimeInterval(3599), now: now),
+                59, "truncates rather than rounding up, so it never extends")
+
+        // No live bumper means omit `minutes` entirely and take the budget's
+        // own window — sending 0 would be clamped to the 5-minute floor instead.
+        T.expect(Derive.remainingBumpMinutes(expiresAt: nil, now: now) == nil, "no bumper, no minutes")
+        T.expect(Derive.remainingBumpMinutes(expiresAt: now, now: now) == nil, "expiring now is not live")
+        T.expect(Derive.remainingBumpMinutes(expiresAt: now.addingTimeInterval(-60), now: now) == nil,
+                 "already expired is not live")
+
+        // The gateway clamps to 5…10080 and says nothing, so match it here
+        // where the number is still visible.
+        T.equal(Derive.remainingBumpMinutes(expiresAt: now.addingTimeInterval(60), now: now),
+                5, "a minute left floors at the gateway minimum")
+        T.equal(Derive.remainingBumpMinutes(expiresAt: now.addingTimeInterval(30 * 86_400), now: now),
+                10_080, "a 30d bumper caps at the gateway maximum")
+    }
+
     T.suite("launchd targets") {
         // A typo here means Stop and Start silently do nothing — launchctl exits
         // non-zero on an unknown target, and the error surfaces far from the
