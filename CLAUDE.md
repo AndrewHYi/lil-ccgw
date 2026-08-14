@@ -92,6 +92,15 @@ preferences. Run it before any release. Its header records two non-obvious
 things worth reading before changing it: why a Linux container cannot do this
 job at all, and the fact that `$HOME` isolates Homebrew but not `NSUserDefaults`.
 
+`scripts/verify-contract.sh` checks the live gateway still speaks the API this
+app decodes. Run it after any gateway update. Unlike the unit suite it requires a
+running gateway, and it exists because the unit suite structurally cannot notice
+this class of breakage — see `ccgw-api-contract`.
+
+Coverage is measured, not asserted by assertion count: `scripts/test.sh
+--coverage` reports it, `--gate` fails on a per-file regression, and
+`scripts/coverage-floors.txt` records both the floors and why no file reads 100.
+
 A file named `main.swift` would be treated as top-level code and collide with
 `@main`; the entry point lives in `LilCcgwApp.swift` and the build passes
 `-parse-as-library`.

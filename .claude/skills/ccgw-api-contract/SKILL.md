@@ -176,9 +176,33 @@ channel.
 ## Verifying after a gateway update
 
 ```sh
-curl -s 127.0.0.1:8484/api/health | python3 -m json.tool
-curl -s 127.0.0.1:8484/api/status | python3 -m json.tool | head -40
+scripts/verify-contract.sh
 ```
 
-Diff the field names against this file. If any listed field is gone or renamed,
-fix `Models.swift` and update this document in the same commit.
+This replaces eyeballing `curl | json.tool` against the tables above. It does two
+things, and either alone would miss the case that matters:
+
+1. **Structural** — every field listed here is present with the right JSON type.
+2. **Decode** — the live payloads go through the real `Models.swift` and the same
+   `keyDecodingStrategy` the app uses, then the values the UI renders are asserted
+   non-nil.
+
+The first check is the one that catches a rename, and it is worth understanding
+why the second cannot. Every rate field here is optional because nullability is
+real, so a renamed field decodes happily to `nil` — the decode check passes and
+the panel shows a dash. Verified by pointing the script at a proxy that renamed
+`burn_rate_hr`: the structural check failed and the decode check reported success.
+
+The decode check earns its place on different failures: a budget window that no
+longer parses, an empty `health.version` (restart detection polls for it to
+change), a `soft_threshold_pct` of zero, or no `block` budget at all — which would
+leave `Budget.isCeiling(among:)` finding nothing and the bumper offering a button
+the gateway always refuses.
+
+If a check fails, fix `Models.swift` and update both the fixtures in
+`Tests/TestSupport.swift` and this document in the same commit.
+
+The script fails rather than skips when no gateway is answering: comparing against
+a live gateway is its entire purpose. The unit suite is the opposite — it must
+stay runnable with the gateway stopped, which is also how we know its mocks are
+not quietly reaching the network.
