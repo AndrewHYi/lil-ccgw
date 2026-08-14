@@ -299,6 +299,26 @@ final class GatewayModel {
         await perform { try await self.client.clearBump(budgetId: budgetId) }
     }
 
+    /// Sets a bumper to an exact amount, up or down.
+    ///
+    /// The gateway only ever *adds* — bumps stack — so there is no set verb and
+    /// lowering one means clearing it and issuing a fresh one. Both calls sit
+    /// inside a single `perform` on purpose: in the gap between them the budget
+    /// falls back to its bare limit, and if spend has already passed that limit
+    /// the gateway blocks every request until the second call lands. Nothing
+    /// may be awaited in between, a refresh least of all.
+    ///
+    /// The gap cannot be closed from here. If the clear succeeds and the
+    /// re-bump is refused, the bumper ends up gone rather than merely wrong;
+    /// `perform` re-asserts the gateway's own reason after refreshing, so that
+    /// surfaces as a failure instead of a button that appeared to do nothing.
+    func setBump(budgetId: String, amountUsd: Double, minutes: Int?) async {
+        await perform {
+            try await self.client.clearBump(budgetId: budgetId)
+            try await self.client.bump(budgetId: budgetId, amountUsd: amountUsd, minutes: minutes)
+        }
+    }
+
     /// Budgets a bumper can actually be applied to. Excludes the overall ceiling,
     /// which the gateway rejects.
     var bumpableBudgets: [Budget] {

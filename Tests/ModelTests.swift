@@ -202,6 +202,62 @@ func runModelTests() async {
     }
 
     do {
+        T.currentSuite = "setting a bumper clears before it re-bumps"
+        let t = MockTransport.healthy()
+        let m = model(t)
+        await m.setBump(budgetId: "session", amountUsd: 125, minutes: 297)
+
+        // Order is the whole safety property. Between the clear and the bump the
+        // budget sits at its bare limit, so bumping first would stack onto the
+        // amount being replaced and clearing first is the only sequence that
+        // lands on 125 — while the reverse order would briefly show a larger
+        // cap and then drop it to nothing.
+        let sent = t.requests
+            .filter { $0.request.path.hasPrefix("/api/budgets") }
+            .compactMap { $0.request.jsonBody?["bump"] as? [String: Any] }
+        T.equal(sent.count, 2, "exactly two budget writes")
+        guard sent.count == 2 else { return }
+
+        T.equal(sent[0]["clear"] as? Bool, true, "clears first")
+        T.expect(sent[0]["amount_usd"] == nil, "no amount on the clear")
+        T.equal(sent[1]["budget_id"] as? String, "session", "then bumps the same budget")
+        T.close(sent[1]["amount_usd"] as? Double ?? -1, 125, "to the exact amount asked for")
+        T.expect(sent[1]["clear"] == nil, "the second call is not another clear")
+
+        // Carrying the remaining minutes is what stops a change of amount from
+        // also becoming a change of expiry.
+        T.equal(sent[1]["minutes"] as? Int, 297, "keeps the original expiry")
+    }
+
+    do {
+        T.currentSuite = "setting a bumper with no live expiry omits minutes"
+        let t = MockTransport.healthy()
+        let m = model(t)
+        await m.setBump(budgetId: "session", amountUsd: 40, minutes: nil)
+
+        let sent = t.requests
+            .filter { $0.request.path.hasPrefix("/api/budgets") }
+            .compactMap { $0.request.jsonBody?["bump"] as? [String: Any] }
+        T.equal(sent.count, 2, "still two writes")
+        T.expect(sent.last?["minutes"] == nil, "minutes omitted, so the budget's window applies")
+    }
+
+    do {
+        T.currentSuite = "a refused re-bump reports rather than going quiet"
+        // The failure mode this ordering cannot avoid: the clear lands, the
+        // re-bump is refused, and the budget is left with no bumper at all. It
+        // has to read as an error, or the panel just shows a vanished bumper.
+        let t = MockTransport.healthy().fail("/api/budgets", with: .http(400, "amount_usd exceeds 10000"))
+        let m = model(t)
+        await m.setBump(budgetId: "session", amountUsd: 99_999, minutes: nil)
+
+        T.expect(m.lastError != nil, "the failure is reported")
+        T.expect(m.lastError?.contains("10000") == true, "and carries the gateway's reason")
+        T.expect(!m.isBusy, "busy flag is cleared")
+        T.expect(t.callCount("/api/status") >= 1, "state still re-read afterwards")
+    }
+
+    do {
         T.currentSuite = "restart uses the API when reachable"
         let t = MockTransport.healthy()
         let m = model(t)
