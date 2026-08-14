@@ -14,10 +14,15 @@ import SwiftUI
 /// SwiftUI hosts inside this plain `swiftc` binary with no bundle and no app.
 ///
 /// What rendering cannot reach is anything behind `@State`: the confirmation
-/// dialogs, the bump form, and the joke line only appear once the user has
-/// clicked something, and a test outside the view cannot set that. Those paths
-/// are covered by testing the decisions they depend on directly — see
-/// `PanelDerive` in `DeriveTests`.
+/// dialogs and the joke line only appear once the user has clicked something,
+/// and a test outside the view cannot set that. Those paths are covered by
+/// testing the decisions they depend on directly — see `PanelDerive` in
+/// `DeriveTests`.
+///
+/// The bump form used to be in that list. It was lifted into `BumpForm`, which
+/// takes its state as bindings, so `.constant` bindings can now render it open
+/// in any combination — the reason to bother being that it carries the widest
+/// fixed-size controls in a panel pinned to 320pt.
 @MainActor
 func runViewTests() async {
     func size<V: View>(_ view: V) -> CGSize {
@@ -100,6 +105,81 @@ func runViewTests() async {
         // header with nothing under it.
         let noSpend = await model(spend: spendFixtureEmpty)
         expectRenders(PanelView(model: noSpend), "panel with no spend rows")
+    }
+
+    T.suite("the bumper form renders open, in both of its shapes") {
+        // Far future so `hasActiveBump()` does not depend on when the suite runs.
+        let farFuture: Double = 4_102_444_800_000
+
+        func form(_ budget: Budget, amount: String = "25", target: String = "125") -> BumpForm {
+            BumpForm(budget: budget, amount: .constant(amount), minutes: .constant(0),
+                     target: .constant(target), onAdd: { _, _ in }, onReplace: { _, _ in },
+                     onCancel: {})
+        }
+
+        // Which limit each field counts from. Geometry cannot catch this — a
+        // wrong base renders a confident, wrong number at exactly the size a
+        // right one would, which is the failure the preview exists to prevent.
+        //
+        // The numbers are today's: a $75 base carrying a mistyped $2210 bumper.
+        let live = makeBudget(pct: 63, bumpUsd: 2210, bumpExpiresAt: farFuture,
+                              effectiveLimit: 2285, spent: 126.32)
+        T.close(BumpForm.addedCap(live, extra: 25), 2310,
+                "adding stacks on the effective limit, bumper included")
+        T.close(BumpForm.replacedCap(live, amount: 125), 200,
+                "replacing counts from the base, discarding the bumper it replaces")
+        T.close(BumpForm.replacedCap(live, amount: 2210), 2285,
+                "replacing like for like lands back where it started")
+
+        // With nothing in force the two agree, which is why only one field shows.
+        let quiet = makeBudget(pct: 20)
+        T.close(BumpForm.addedCap(quiet, extra: 25), BumpForm.replacedCap(quiet, amount: 25),
+                "with no bumper active, adding and replacing are the same cap")
+
+        T.equal(BumpForm.fieldText(2210), "2210", "whole dollars prefill without decimals")
+        T.equal(BumpForm.fieldText(12.5), "12.50", "fractional amounts keep their cents")
+
+        // No bumper in force: one row only. Setting a bumper to N and adding N
+        // are the same request here, so the second field must not appear.
+        let plain = makeBudget(pct: 20)
+        expectRenders(form(plain), "bumper form with no active bumper")
+
+        // A bumper in force: the replace row appears underneath.
+        let bumped = makeBudget(pct: 20, bumpUsd: 25, bumpExpiresAt: farFuture, effectiveLimit: 100)
+        let bumpedSize = size(form(bumped))
+        expectRenders(form(bumped), "bumper form with an active bumper")
+        T.expect(bumpedSize.height > size(form(plain)).height,
+                 "the replace row adds height rather than silently not rendering")
+
+        // Today's accident, as the panel would show it: a $75 base under a
+        // mistyped $2210 bumper, with $126.32 already spent.
+        let overspent = makeBudget(pct: 63, bumpUsd: 2210, bumpExpiresAt: farFuture,
+                                   effectiveLimit: 2285, spent: 126.32)
+        expectRenders(form(overspent, target: "2210"), "bumper form on an overshot bumper")
+
+        // The warning branch: a replacement that lands under money already spent
+        // renders an extra line rather than being silently dropped.
+        let safe = size(form(overspent, target: "125"))
+        let dangerous = size(form(overspent, target: "10"))
+        T.expect(dangerous.height > safe.height,
+                 "a cap under what is already spent renders its warning")
+
+        // The panel pads by 12 inside a 320pt frame, so the form is laid out at
+        // 296 — not at its ideal width, which is far wider because the
+        // explanation would rather be one line.
+        //
+        // The failure this guards against is a rigid element that cannot give:
+        // the rows carry a 46pt field, a 52pt field and a 130pt picker, and if
+        // their labels ever grow past the remaining space the text wraps to
+        // nothing and the form's height runs away. Asserting the wrapped height
+        // stays sane catches that, where measuring the ideal width would not.
+        let inner: CGFloat = 320 - 12 * 2
+        for (label, budget) in [("plain", plain), ("bumped", bumped), ("overspent", overspent)] {
+            let s = size(form(budget).frame(width: inner))
+            T.close(s.width, inner, "\(label) form lays out at the panel's inner width")
+            T.expect(s.height > 40 && s.height < 260,
+                     "\(label) form wraps to a sane height (\(Int(s.height))pt)")
+        }
     }
 
     await T.suite("the panel renders with every section toggled off") {

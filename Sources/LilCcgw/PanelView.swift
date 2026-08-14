@@ -24,6 +24,11 @@ struct PanelView: View {
     @State private var bumpAmount = "25"
     @State private var bumpMinutes = 0
 
+    /// The "set the bumper to" field, which replaces an active bumper instead of
+    /// adding to it. Prefilled with the current amount when the form opens, so
+    /// correcting a mistyped bumper is an edit rather than a fresh calculation.
+    @State private var bumpTarget = ""
+
     private enum Confirmation: Identifiable {
         case stop, bypass
         var id: String {
@@ -274,6 +279,7 @@ struct PanelView: View {
                     bumping = (bumping == budget.id) ? nil : budget.id
                     bumpAmount = "25"
                     bumpMinutes = 0
+                    bumpTarget = BumpForm.fieldText(budget.bumpUsd ?? 0)
                 }
                 .buttonStyle(.borderless)
                 .font(.system(size: 10))
@@ -286,52 +292,26 @@ struct PanelView: View {
     }
 
     private func bumpForm(_ budget: Budget) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 4) {
-                Text("Allow an extra")
-                TextField("", text: $bumpAmount)
-                    .frame(width: 46)
-                    .monospacedDigit()
-                    .multilineTextAlignment(.trailing)
-                Text("USD for")
-                Picker("", selection: $bumpMinutes) {
-                    // 0 stands for "omit minutes", which makes the gateway use
-                    // the budget's own window — its documented default.
-                    Text("this window (\(budget.window))").tag(0)
-                    Text("1 hour").tag(60)
-                    Text("12 hours").tag(720)
-                    Text("24 hours").tag(1440)
+        BumpForm(
+            budget: budget,
+            amount: $bumpAmount,
+            minutes: $bumpMinutes,
+            target: $bumpTarget,
+            onAdd: { amount, minutes in
+                Task {
+                    await model.bump(budgetId: budget.id, amountUsd: amount, minutes: minutes)
+                    bumping = nil
                 }
-                .labelsHidden()
-                .frame(width: 130)
-            }
-            HStack(spacing: 6) {
-                Button("Apply") {
-                    guard let amount = Double(bumpAmount), amount > 0 else { return }
-                    let minutes = bumpMinutes == 0 ? nil : bumpMinutes
-                    Task {
-                        await model.bump(budgetId: budget.id, amountUsd: amount, minutes: minutes)
-                        bumping = nil
-                    }
+            },
+            onReplace: { amount, minutes in
+                Task {
+                    await model.setBump(budgetId: budget.id, amountUsd: amount, minutes: minutes)
+                    bumping = nil
                 }
-                .disabled(Double(bumpAmount).map { $0 <= 0 } ?? true)
-                Button("Cancel") { bumping = nil }
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-
-            Text(budget.hasActiveBump()
-                 ? "Stacks on top of the active bumper; the later expiry wins."
-                 : "The overall ceiling is never raised, so total spend stays capped — the bump comes out of remaining headroom, and the sustainable pace for the rest of the window drops to match.")
-                .font(.system(size: 9))
-                .foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .font(.system(size: 10))
-        .padding(6)
-        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 4))
+            },
+            onCancel: { bumping = nil }
+        )
     }
-
     private func burn(_ primary: PrimaryBudget) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
@@ -462,6 +442,170 @@ struct PanelView: View {
     }
 
     private func paceColor(_ pace: Double?) -> Color { PanelDerive.paceColor(pace) }
+}
+
+/// The bumper form, lifted out of `PanelView` so its layout can be asserted.
+///
+/// `PanelView` opens it from a private `@State`, so nothing outside could render
+/// it open — and this is the part that just grew a second field and two live cap
+/// previews inside a fixed 320pt panel, which is precisely the shape of change
+/// `RenderTests` exists to catch. Actions are handed out as closures so the view
+/// itself stays free of the model.
+struct BumpForm: View {
+    let budget: Budget
+    @Binding var amount: String
+    @Binding var minutes: Int
+    @Binding var target: String
+    var onAdd: (Double, Int?) -> Void
+    var onReplace: (Double, Int?) -> Void
+    var onCancel: () -> Void
+
+    var body: some View {
+        let addend = Double(amount) ?? 0
+        let replacement = Double(target) ?? 0
+        return VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 4) {
+                    Text("Allow an extra")
+                    TextField("", text: $amount)
+                        .frame(width: 46)
+                        .monospacedDigit()
+                        .multilineTextAlignment(.trailing)
+                    Text("USD for")
+                    Picker("", selection: $minutes) {
+                        // 0 stands for "omit minutes", which makes the gateway use
+                        // the budget's own window — its documented default.
+                        Text("this window (\(budget.window))").tag(0)
+                        Text("1 hour").tag(60)
+                        Text("12 hours").tag(720)
+                        Text("24 hours").tag(1440)
+                    }
+                    .labelsHidden()
+                    .frame(width: 130)
+                }
+                // Adding stacks on whatever is already in force, so the cap this
+                // produces starts from the effective limit rather than the base.
+                capPreview(
+                    cap: BumpForm.addedCap(budget, extra: addend),
+                    spent: budget.spentUsd,
+                    action: "Add",
+                    enabled: addend > 0
+                ) {
+                    // 0 is the picker's "omit minutes", not a zero-length bump.
+                    onAdd(addend, minutes == 0 ? nil : minutes)
+                }
+            }
+
+            // Replacing only means anything while a bumper is in force; with none
+            // active, setting it to N and adding N are the same request, and a
+            // second field for the same outcome is just another thing to misread.
+            if budget.hasActiveBump() {
+                Divider()
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 4) {
+                        Text("Set the bumper to")
+                        TextField("", text: $target)
+                            .frame(width: 52)
+                            .monospacedDigit()
+                            .multilineTextAlignment(.trailing)
+                        Text("USD")
+                    }
+                    capPreview(
+                        cap: BumpForm.replacedCap(budget, amount: replacement),
+                        spent: budget.spentUsd,
+                        action: "Replace",
+                        enabled: replacement > 0
+                    ) {
+                        // Carry what is left of the current bumper so changing the
+                        // amount does not silently restart its clock.
+                        onReplace(
+                            replacement,
+                            Derive.remainingBumpMinutes(expiresAt: budget.bumpExpiryDate)
+                        )
+                    }
+                }
+            }
+
+            HStack {
+                Text(budget.hasActiveBump()
+                     ? "Adding stacks on the active bumper and the later expiry wins; replacing swaps it outright and keeps the expiry it already had."
+                     : "The overall ceiling is never raised, so total spend stays capped — the bump comes out of remaining headroom, and the sustainable pace for the rest of the window drops to match.")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                Button("Cancel", action: onCancel)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
+        }
+        .font(.system(size: 10))
+        .padding(6)
+        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 4))
+    }
+
+    /// The cap a typed number would actually produce, beside the button that
+    /// commits it.
+    ///
+    /// Both fields take a delta while the number anyone reasons about is the cap,
+    /// and nothing on screen used to bridge the two — which is how a $75 budget
+    /// acquires a $2285 ceiling without anyone intending it. Showing the outcome
+    /// next to the input is the whole point of this row.
+    private func capPreview(
+        cap: Double,
+        spent: Double,
+        action: String,
+        enabled: Bool,
+        apply: @escaping () -> Void
+    ) -> some View {
+        let warning = Derive.bumpWarning(cap: cap, spent: spent)
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Text("→ cap \(Fmt.limit(cap))")
+                    .monospacedDigit()
+                    .foregroundStyle(warning == nil ? Color.secondary : Color.red)
+                Spacer()
+                Button(action, action: apply)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!enabled)
+            }
+            if let warning {
+                // Deliberately not disabling the button. Capping yourself at what
+                // you have already spent is the fastest stop this app offers, so
+                // it states the consequence and lets it through.
+                Text(warning)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .font(.system(size: 9))
+    }
+
+    /// The cap the "allow an extra" field would produce.
+    ///
+    /// Adding stacks on whatever is already in force, so it starts from the
+    /// effective limit. Starting from the base instead would under-report the cap
+    /// by the size of the active bumper — a wrong number rendered confidently,
+    /// which is the exact failure this preview exists to prevent.
+    static func addedCap(_ budget: Budget, extra: Double) -> Double {
+        Derive.resultingCap(base: budget.effectiveLimitUsd, bump: extra)
+    }
+
+    /// The cap the "set the bumper to" field would produce.
+    ///
+    /// Replacing discards the active bumper, so this starts from the base limit.
+    /// Starting from the effective limit would double-count the bumper being
+    /// replaced.
+    static func replacedCap(_ budget: Budget, amount: Double) -> Double {
+        Derive.resultingCap(base: budget.baseLimitUsd(), bump: amount)
+    }
+
+    /// A bumper amount as editable text — whole dollars stay whole, so a $2210
+    /// bumper prefills as "2210" rather than "2210.00".
+    static func fieldText(_ value: Double) -> String {
+        value == value.rounded() ? String(Int(value)) : String(format: "%.2f", value)
+    }
 }
 
 /// The panel's decisions, kept out of the view so tests can reach them.

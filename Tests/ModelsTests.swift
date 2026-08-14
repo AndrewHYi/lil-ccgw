@@ -227,14 +227,16 @@ func runModelsTests() {
 
 func makeBudget(
     pct: Double, id: String = "test", window: String = "5h", action: String = "block",
-    bumpUsd: Double? = nil, bumpExpiresAt: Double? = nil, effectiveLimit: Double = 75
+    bumpUsd: Double? = nil, bumpExpiresAt: Double? = nil, effectiveLimit: Double = 75,
+    spent: Double = 10
 ) -> Budget {
     let bumpField: String = bumpUsd == nil ? "null" : String(format: "%.2f", bumpUsd!)
     let expiryField: String = bumpExpiresAt == nil ? "null" : String(format: "%.0f", bumpExpiresAt!)
     let json = """
     {
       "id": "\(id)", "scope": "global", "window": "\(window)",
-      "effective_limit_usd": \(effectiveLimit), "spent_usd": 10, "remaining_usd": 65,
+      "effective_limit_usd": \(effectiveLimit), "spent_usd": \(spent),
+      "remaining_usd": \(max(0, effectiveLimit - spent)),
       "pct": \(pct), "action": "\(action)", "exhausted": false, "soft": false,
       "burn_rate_hr": null, "sustainable_hr": null, "pace": null,
       "bump_usd": \(bumpField),
