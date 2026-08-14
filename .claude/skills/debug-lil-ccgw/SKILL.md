@@ -89,10 +89,31 @@ per frame — isolating the icon into its own nested view was tried and changed
 nothing. Levers: the animate toggle in Settings → Display, or the frame intervals.
 
 **Menu bar icons shuffle sideways while the icon animates.**
-The glyph is rendering at natural width. Each tier animates between two different
-SF Symbols with different widths (up to 6pt apart), so the status item resizes
-every tick. `MenuBarLabel` renders the glyph into a fixed 20pt slot for this
-reason; `RenderTests` asserts frame pairs measure equal.
+Two different causes, and the first one hides the second.
+
+1. *The status item resizes.* The glyph is rendering at natural width, so the item
+   grows and shrinks each tick and shoves its neighbours around. `MenuBarLabel`
+   renders into a fixed 20pt slot for this reason; `RenderTests` asserts frame
+   pairs measure equal.
+2. *The item holds still and the glyph slides inside it.* The slot is centred, so
+   frames of unequal natural width sit at different offsets — up to 6pt of travel
+   with a perfectly stable item. **Every layout-width assertion passes while this
+   is happening**, which is exactly why it survived: the fix for (1) was already
+   in place and looked like it covered this.
+
+If the item's neighbours are steady but the icon still moves, it is (2). Check
+that the tier's frames share a natural width:
+
+```sh
+# each tier's frames must measure identically
+grep -n 'frames: \[' Sources/LilCcgw/SkitScene.swift
+```
+
+The rule is one symbol at one width — an outline/fill pair (`flame`/`flame.fill`)
+or two steps of a family (`thermometer.medium`/`.high`). Two unrelated symbols
+almost never match. `figure.*` has no fill variant, so a `figure` tier cannot be
+animated this way at all; `melt` uses `bolt`/`bolt.fill` because the only
+same-width runner pair overlapped `pause.circle.fill` by 0.85.
 
 **A budget's `+ bumper` returns 400.**
 The overall ceiling — the widest-window `block` budget — cannot be bumped, by

@@ -152,6 +152,21 @@ symbols with different natural widths, so without the slot the status item resiz
 on every tick and shoves its neighbours around. Anything wider than the slot is
 silently cropped — `RenderTests` asserts nothing is.
 
+**The slot stops the item resizing; it does not stop the glyph sliding.** A symbol
+narrower than 20pt is centred in the slot, so frames of unequal width sit at
+different offsets and the icon jumps sideways while the item itself holds still.
+Four tiers shipped that way — crit and zen 4px, payday 6px — and every
+layout-width assertion passed throughout, because layout width was never what
+moved. **A tier's frames must be one symbol at one width**: an outline/fill pair,
+or two steps of a family. `RenderTests` measures drawn ink, not layout, which is
+the only thing that catches it.
+
+**Glyphs must be distinguishable, not merely different.** Byte-distinct bitmaps
+are too weak a test at 20pt monochrome: `figure.run.circle.fill` hashes differently
+from `pause.circle.fill` while overlapping it 0.85 by area, which would have made
+runaway spend look like paused enforcement. `RenderTests` compares silhouettes
+across every pair of states and holds them under 0.6.
+
 **Retain the status item.** `MenuBarExtra` handles this, but if this ever drops to
 `NSStatusItem`, hold a strong reference — the status bar does not retain items,
 and a deallocated one silently removes its own icon.
@@ -195,7 +210,7 @@ Hand-rolled harness in `Tests/TestSupport.swift`, ~40 lines, because XCTest and
 swift-testing both want SwiftPM or xcodebuild. It reports file and line and exits
 non-zero on failure — verify that by breaking an assertion, not by trusting it.
 
-708 assertions across fourteen suites, covering 90% of lines. **Read
+876 assertions across fourteen suites, covering 90% of lines. **Read
 `testing-lil-ccgw` before touching tests** — the harness is deliberately unusual
 and an agent that reaches for XCTest will waste an hour.
 
@@ -210,7 +225,7 @@ totalling 789 lines sat at zero while the count read 457.
 | `SkitTests` | every pace boundary from both sides, tier precedence, the zen clock, animation shape |
 | `DeriveTests` | budget heat, poll intervals, dashboard URL, bumpable filter, launchd targets, error text, accessibility label, registered defaults |
 | `ModelTests` | `GatewayModel` end to end over `MockTransport` — per-section degradation, and the exact request each control issues |
-| `RenderTests` | real SwiftUI geometry via `NSHostingView.fittingSize`, plus rasterised bitmap distinctness |
+| `RenderTests` | real SwiftUI geometry via `NSHostingView.fittingSize`, rasterised bitmap distinctness, per-frame ink stability, and silhouette overlap between states |
 | `ViewTests` | the panel, settings panes and help window rendered in every reachable state |
 | `PanelDeriveTests` | the panel's colour and breakdown decisions, including the pace bands copied from the dashboard |
 | `ServiceControlTests` | launchd and CLI control over a fake process environment — the two-step stop, exit code 3, `lsof` parsing |
