@@ -1,0 +1,23 @@
+# Per-file line-coverage floors, enforced by scripts/test.sh --gate.
+#
+# A ratchet, not a target: the gate fails when a file drops below its
+# recorded floor, so coverage can climb and cannot silently rot. Raise
+# these with --update-floors when you have added tests; never lower one
+# to make a red run green.
+#
+# Regenerate: scripts/test.sh --coverage --update-floors
+GatewayClient.swift 92.68
+GatewayModel.swift 63.16
+HelpView.swift 0.00
+HelpWindow.swift 0.00
+MenuBarLabel.swift 84.62
+Models.swift 94.20
+Notifier.swift 22.50
+PanelView.swift 0.00
+ServiceControl.swift 44.57
+Settings.swift 96.63
+SettingsView.swift 0.00
+SettingsWindow.swift 0.00
+SkitScene.swift 99.57
+Transport.swift 10.81
+TOTAL 30.34
