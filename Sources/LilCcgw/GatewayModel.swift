@@ -232,7 +232,11 @@ final class GatewayModel {
             agentLoaded = true
         }
 
-        notifier.evaluate(reachability: reachability, heat: budgetHeat, budget: trackedBudget)
+        for post in notifier.evaluate(
+            reachability: reachability, heat: budgetHeat, budget: trackedBudget
+        ) {
+            Notifier.post(title: post.title, body: post.body)
+        }
         advanceScene()
     }
 
@@ -405,22 +409,40 @@ final class GatewayModel {
 /// Fires a notification the first time the tracked budget crosses its soft
 /// threshold or the gateway drops, and re-arms once the condition clears — so a
 /// sustained overspend notifies once rather than every poll.
+///
+/// Internal rather than private so the fire-once rule can be asserted. It ran on
+/// every refresh and nothing checked it: `Notifier.post` is a no-op in the test
+/// binary (no bundle identifier), so the state machine executed and its decisions
+/// went unobserved. `ModelTests` even claimed to cover this.
 @MainActor
-private struct ThresholdNotifier {
+struct ThresholdNotifier {
+    /// One notification this decided to send.
+    struct Post: Equatable {
+        let title: String
+        let body: String
+    }
+
     private var softFired = false
     private var downFired = false
 
-    mutating func evaluate(reachability: Reachability, heat: BudgetHeat, budget: Budget?) {
+    /// Decides what to notify about, and re-arms. Returns rather than posts, so
+    /// the fire-once rule is observable: `Notifier.post` does nothing in the test
+    /// binary, so a version that decided to notify on every single poll would have
+    /// looked identical from outside.
+    mutating func evaluate(
+        reachability: Reachability, heat: BudgetHeat, budget: Budget?
+    ) -> [Post] {
         let defaults = UserDefaults.standard
+        var posts: [Post] = []
 
         if reachability == .down {
             if !downFired && defaults.bool(forKey: DefaultsKey.notifyDown) {
                 // Lead with the consequence: the user cares that Claude Code is
                 // broken, and the gateway is only the reason why.
-                Notifier.post(
+                posts.append(Post(
                     title: "Claude Code requests are failing",
                     body: "The ccgw gateway stopped answering. Open the menu bar item to recover it, or bypass it to keep working."
-                )
+                ))
             }
             downFired = true
         } else {
@@ -430,15 +452,16 @@ private struct ThresholdNotifier {
         let overThreshold = heat == .soft || heat == .exhausted
         if overThreshold {
             if !softFired && defaults.bool(forKey: DefaultsKey.notifySoft), let budget {
-                let title = heat == .exhausted ? "Budget exhausted" : "Budget over threshold"
-                Notifier.post(
-                    title: title,
+                posts.append(Post(
+                    title: heat == .exhausted ? "Budget exhausted" : "Budget over threshold",
                     body: "\(budget.id) \(budget.window): \(Fmt.usd(budget.spentUsd)) of \(Fmt.limit(budget.effectiveLimitUsd))"
-                )
+                ))
             }
             softFired = true
         } else {
             softFired = false
         }
+
+        return posts
     }
 }

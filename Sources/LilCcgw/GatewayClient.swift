@@ -31,20 +31,31 @@ actor GatewayClient {
     private var host: String
     private var port: Int
 
+    private let token: @Sendable () -> String?
+
     /// `transport` is injectable so tests can drive the model without a gateway
     /// and assert the requests it issues. Production keeps the default.
-    init(host: String = "127.0.0.1", port: Int = 8484, transport: Transport = URLSessionTransport()) {
+    ///
+    /// `token` is injectable for a narrower reason: it reads `~/.ccgw/token`, so a
+    /// test that asserted the header had to branch on whether that file happened
+    /// to exist on the machine running it — and therefore asserted the opposite
+    /// thing on a machine without a gateway.
+    init(
+        host: String = "127.0.0.1",
+        port: Int = 8484,
+        transport: Transport = URLSessionTransport(),
+        token: @escaping @Sendable () -> String? = { GatewayClient.apiToken() }
+    ) {
         self.host = host
         self.port = port
         self.transport = transport
+        self.token = token
     }
 
     func configure(host: String, port: Int) {
         self.host = host
         self.port = port
     }
-
-    var dashboardURL: URL? { URL(string: "http://\(host):\(port)/dash") }
 
     // MARK: - Reads
 
@@ -132,12 +143,12 @@ actor GatewayClient {
     private func send(_ path: String, method: String, body: [String: Any]?) async throws -> Data {
         let payload = try body.map { try JSONSerialization.data(withJSONObject: $0) }
         let request = GatewayRequest(path: path, method: method, body: payload)
-        return try await transport.send(request, to: try url(path), token: Self.apiToken())
+        return try await transport.send(request, to: try url(path), token: token())
     }
 
     /// Read once per call rather than caching: the token file can appear or be
     /// rotated while the app is running.
-    private static func apiToken() -> String? {
+    static func apiToken() -> String? {
         let path = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".ccgw/token")
         guard let raw = try? String(contentsOf: path, encoding: .utf8) else { return nil }

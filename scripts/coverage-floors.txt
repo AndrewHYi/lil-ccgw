@@ -6,18 +6,36 @@
 # to make a red run green.
 #
 # Regenerate: scripts/test.sh --coverage --update-floors
-GatewayClient.swift 92.68
-GatewayModel.swift 92.60
+#
+# Why no file reads 100, and what it would take:
+#
+#   PanelView      the confirmations, the bump form and the joke line are
+#                  behind @State, which nothing outside the view can set.
+#                  Their decisions are tested in PanelDeriveTests instead.
+#   SettingsView   the launch-at-login toggle calls SMAppService, which
+#                  would install a real login item on the test machine.
+#   Notifier       UNUserNotificationCenter.current() traps in a process
+#                  with no bundle identifier, which is what this binary is.
+#   Transport      the remainder is the real URLSession send; covering it
+#                  means a listening socket, and the suite has to keep
+#                  running with the gateway stopped.
+#   Help/Settings  the NSApp.windows raise loop needs a real scene list.
+#   Window
+#
+# LilCcgwApp.swift is absent entirely: test.sh excludes it because its
+# @main collides with Tests/main.swift, so it carries no coverage mapping.
+GatewayClient.swift 100.00
+GatewayModel.swift 95.15
 HelpView.swift 100.00
 HelpWindow.swift 94.74
 MenuBarLabel.swift 97.90
 Models.swift 95.65
 Notifier.swift 48.84
 PanelView.swift 72.01
-ServiceControl.swift 92.67
-Settings.swift 97.87
+ServiceControl.swift 96.34
+Settings.swift 98.94
 SettingsView.swift 91.93
 SettingsWindow.swift 90.91
 SkitScene.swift 100.00
-Transport.swift 52.27
-TOTAL 85.32
+Transport.swift 65.91
+TOTAL 86.32

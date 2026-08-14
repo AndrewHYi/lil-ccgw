@@ -25,6 +25,9 @@ await MainActor.run { runRenderTests() }
 // Window helpers touch NSApp, so main actor as well.
 await MainActor.run { runWindowTests() }
 
+// The notifier's fire-once rule is main-actor isolated.
+await MainActor.run { runNotifierRuleTests() }
+
 // View tests render the panel, settings and help views. Async as well as
 // main-actor isolated, because each state is reached through a real refresh.
 await runViewTests()
@@ -35,6 +38,9 @@ await runServiceControlTests()
 
 // The model's lifecycle actions, on the same fake environment.
 await runRecoveryTests()
+
+// Odds and ends that coverage measurement showed nothing had ever executed.
+await runGapTests()
 
 // Model tests are async and main-actor isolated. Top-level `await` in main.swift
 // is the pattern that works here — a DispatchSemaphore around a @MainActor task

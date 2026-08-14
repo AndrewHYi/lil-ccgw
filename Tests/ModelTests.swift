@@ -3,9 +3,13 @@ import Foundation
 /// End-to-end tests for `GatewayModel` driven by a mock transport.
 ///
 /// These cover the behaviour that only exists when the pieces run together:
-/// per-section degradation, the exact requests each control issues, error
-/// capture, and the notifier's fire-once rule. All of it was untestable while
-/// the client built its own `URLSession`.
+/// per-section degradation, the exact requests each control issues, and error
+/// capture. All of it was untestable while the client built its own
+/// `URLSession`.
+///
+/// This comment used to claim the notifier's fire-once rule as well, and no
+/// assertion about the notifier existed anywhere in the suite. That rule now
+/// lives in `NotifierRuleTests`.
 ///
 /// Every assertion here would still hold against a real gateway — the mock
 /// supplies fixtures captured verbatim from one, and the wire-level assertions
@@ -242,17 +246,25 @@ func runModelTests() async {
         let m = model(t)
         await m.refresh()
 
-        // The token file exists on this machine; if it does, every request must
-        // carry it, so flipping api_token on later can't break the buttons.
-        let tokenPath = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".ccgw/token")
-        if FileManager.default.fileExists(atPath: tokenPath.path) {
-            T.expect(t.requests.allSatisfy { $0.token != nil },
-                     "every request carries X-CCGW-Token when the file exists")
-        } else {
-            T.expect(t.requests.allSatisfy { $0.token == nil },
-                     "no token sent when the file is absent")
-        }
+        // This used to branch on whether ~/.ccgw/token happened to exist, so it
+        // asserted the opposite thing on a machine without a gateway and could
+        // not fail on either. The token source is injected now, so both halves
+        // of the rule are asserted on every machine.
+        T.expect(!t.requests.isEmpty, "a refresh issues requests to assert about")
+
+        let withToken = MockTransport.healthy()
+        let tokened = GatewayModel(
+            client: GatewayClient(transport: withToken, token: { "test-token" }))
+        await tokened.refresh()
+        T.expect(withToken.requests.allSatisfy { $0.token == "test-token" },
+                 "every request carries X-CCGW-Token when a token exists")
+
+        let withoutToken = MockTransport.healthy()
+        let untokened = GatewayModel(
+            client: GatewayClient(transport: withoutToken, token: { nil }))
+        await untokened.refresh()
+        T.expect(withoutToken.requests.allSatisfy { $0.token == nil },
+                 "and none carries it when there is no token")
     }
 
     do {
