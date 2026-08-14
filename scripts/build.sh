@@ -12,6 +12,8 @@
 #   scripts/build.sh                 native arch, debug-ish, into dist/
 #   scripts/build.sh --release       optimised
 #   scripts/build.sh --universal     arm64 + x86_64 (for distribution)
+#   scripts/build.sh --universal --allow-single-arch
+#                                    tolerate a failed x86_64 slice — NOT for release
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -28,10 +30,12 @@ APP="$DIST/$APP_NAME.app"
 # an unflagged `build.sh` would abort.
 OPTIMISE=(-Onone)
 UNIVERSAL=0
+ALLOW_SINGLE_ARCH=0
 for arg in "$@"; do
   case "$arg" in
     --release) OPTIMISE=(-O) ;;
     --universal) UNIVERSAL=1; OPTIMISE=(-O) ;;
+    --allow-single-arch) ALLOW_SINGLE_ARCH=1 ;;
     *) echo "unknown flag: $arg" >&2; exit 2 ;;
   esac
 done
@@ -56,14 +60,22 @@ if [[ "$UNIVERSAL" == "1" ]]; then
   echo "==> building universal (arm64 + x86_64)"
   build_slice arm64 "$DIST/$APP_NAME-arm64"
   # A cross-compiled x86_64 slice needs the SDK to carry that arch. If it
-  # cannot, say so and ship the native slice rather than silently producing a
-  # single-arch binary labelled universal.
+  # cannot, fail — this used to warn and ship arm64 anyway, but a warning
+  # scrolls past in a release log and the result is a bundle an Intel Mac
+  # cannot exec at all. brew install succeeds, then the app never launches.
+  # --allow-single-arch is the deliberate opt-out for local builds only.
   if build_slice x86_64 "$DIST/$APP_NAME-x86_64" 2>/dev/null; then
     lipo -create -output "$APP/Contents/MacOS/$APP_NAME" \
       "$DIST/$APP_NAME-arm64" "$DIST/$APP_NAME-x86_64"
-  else
-    echo "!!  x86_64 slice failed to build — shipping arm64 only" >&2
+  elif [[ "$ALLOW_SINGLE_ARCH" == "1" ]]; then
+    echo "!!  x86_64 slice failed — shipping arm64 only (--allow-single-arch)" >&2
     cp "$DIST/$APP_NAME-arm64" "$APP/Contents/MacOS/$APP_NAME"
+  else
+    rm -f "$DIST/$APP_NAME-arm64"
+    echo "!!  x86_64 slice failed to build. This SDK cannot cross-compile it," >&2
+    echo "    so a --universal build here would ship arm64 only and break on" >&2
+    echo "    Intel. Pass --allow-single-arch if you accept that locally." >&2
+    exit 1
   fi
   rm -f "$DIST/$APP_NAME-arm64" "$DIST/$APP_NAME-x86_64"
 else
