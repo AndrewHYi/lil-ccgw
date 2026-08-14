@@ -67,6 +67,81 @@ enum T {
         }
     }
 
+    /// Async counterpart to `suite`. The sync one takes `() throws -> Void`, so
+    /// async suites used to set `currentSuite` by hand and lost the
+    /// throw-is-reported-not-fatal behaviour with it.
+    static func suite(_ name: String, _ body: () async throws -> Void) async {
+        currentSuite = name
+        do {
+            try await body()
+        } catch {
+            failures.append("\(name): threw \(error)")
+        }
+    }
+
+    /// Asserts that `body` throws, and optionally that it throws a particular
+    /// error. Without this the only way to test a throwing path was a hand-rolled
+    /// do/catch plus `expect(false, …)` in the success branch, which is easy to
+    /// write in a way that passes when nothing throws at all.
+    static func expectThrows<V>(
+        _ label: String,
+        _ expected: (any Error)? = nil,
+        file: StaticString = #file,
+        line: UInt = #line,
+        _ body: () throws -> V
+    ) {
+        do {
+            _ = try body()
+            failures.append(
+                "\(currentSuite): \(label) — expected a throw, returned normally  (\(shortFile(file)):\(line))"
+            )
+        } catch {
+            guard let expected else { passed += 1; return }
+            if "\(error)" == "\(expected)" {
+                passed += 1
+            } else {
+                failures.append(
+                    "\(currentSuite): \(label) — expected \(expected), threw \(error)  (\(shortFile(file)):\(line))"
+                )
+            }
+        }
+    }
+
+    /// Async form of `expectThrows`.
+    static func expectThrows<V>(
+        _ label: String,
+        _ expected: (any Error)? = nil,
+        file: StaticString = #file,
+        line: UInt = #line,
+        _ body: () async throws -> V
+    ) async {
+        do {
+            _ = try await body()
+            failures.append(
+                "\(currentSuite): \(label) — expected a throw, returned normally  (\(shortFile(file)):\(line))"
+            )
+        } catch {
+            guard let expected else { passed += 1; return }
+            if "\(error)" == "\(expected)" {
+                passed += 1
+            } else {
+                failures.append(
+                    "\(currentSuite): \(label) — expected \(expected), threw \(error)  (\(shortFile(file)):\(line))"
+                )
+            }
+        }
+    }
+
+    /// Fails unconditionally. `expect(false, …)` reads as a double negative at
+    /// the bottom of a `guard`, which is where it is almost always used.
+    static func fail(
+        _ message: String,
+        file: StaticString = #file,
+        line: UInt = #line
+    ) {
+        failures.append("\(currentSuite): \(message)  (\(shortFile(file)):\(line))")
+    }
+
     static func report() -> Int32 {
         if failures.isEmpty {
             print("✓ \(passed) assertions passed")
@@ -82,6 +157,31 @@ enum T {
     private static func shortFile(_ file: StaticString) -> String {
         URL(fileURLWithPath: "\(file)").lastPathComponent
     }
+}
+
+/// Clears whatever `UserDefaults.standard` means inside the test binary, so a
+/// run cannot pass because an earlier run left a value behind.
+///
+/// This binary has no bundle identifier, so `UserDefaults.standard` resolves to
+/// a domain named after the executable — `lil-ccgw-tests` — and *not* to
+/// `com.andrewhyi.lil-ccgw`. The app's real preferences are therefore already
+/// safe from the suite, which is worth stating because the opposite is the
+/// natural assumption. What was not safe is determinism: that plist persisted
+/// between runs, so `@AppStorage`-backed state and `meltSince` carried over.
+///
+/// The guard is the load-bearing part. If this binary ever acquires the app's
+/// bundle identifier, wiping the domain would delete the user's real settings,
+/// so it refuses rather than trusting that never to happen.
+func resetTestDefaults() {
+    let domain = Bundle.main.bundleIdentifier ?? ProcessInfo.processInfo.processName
+    guard domain != "com.andrewhyi.lil-ccgw" else {
+        print("""
+        ✗ refusing to reset defaults: this binary claims the app's bundle \
+        identifier, so the domain holds real user settings
+        """)
+        exit(2)
+    }
+    UserDefaults.standard.removePersistentDomain(forName: domain)
 }
 
 /// Decodes with the same strategy `GatewayClient` uses, so a decoding bug
@@ -204,6 +304,113 @@ let statusFixturePaused = """
       "bump_usd": null, "bump_expires_at": null
     }
   ]
+}
+"""
+
+/// No budgets configured yet — reachable on a fresh gateway install, and the
+/// state where the panel must show something other than an empty list.
+let statusFixtureEmptyBudgets = """
+{
+  "enforcement": "on",
+  "enforcement_resume_at": null,
+  "degraded": false,
+  "soft_threshold_pct": 80,
+  "budgets": []
+}
+"""
+
+/// One exhausted budget and one over the soft threshold, which are the two
+/// colour branches in the panel's `color(for:)` and the only states where the
+/// bar stops being informational and starts being a warning.
+let statusFixtureExhausted = """
+{
+  "enforcement": "on",
+  "enforcement_resume_at": null,
+  "degraded": false,
+  "soft_threshold_pct": 80,
+  "primary": {
+    "id": "session", "window": "5h", "pace": 2.4,
+    "burn_rate_hr": 36, "sustainable_hr": 15,
+    "eta_hours": 0.2, "fits_window": false
+  },
+  "budgets": [
+    {
+      "id": "session", "scope": "global", "window": "5h",
+      "effective_limit_usd": 75, "spent_usd": 75, "remaining_usd": 0,
+      "pct": 100, "action": "block", "exhausted": true, "soft": true,
+      "burn_rate_hr": 36, "sustainable_hr": 15, "pace": 2.4,
+      "bump_usd": null, "bump_expires_at": null
+    },
+    {
+      "id": "weekly", "scope": "global", "window": "7d",
+      "effective_limit_usd": 300, "spent_usd": 258, "remaining_usd": 42,
+      "pct": 86, "action": "warn", "exhausted": false, "soft": true,
+      "burn_rate_hr": 12, "sustainable_hr": 10, "pace": 1.2,
+      "bump_usd": null, "bump_expires_at": null
+    }
+  ]
+}
+"""
+
+/// A budget with a live bumper. The expiry is deliberately far future rather
+/// than `now + something`: `hasActiveBump()` compares against the clock, so a
+/// relative expiry would make this fixture's rendering depend on when it ran.
+let statusFixtureBumped = """
+{
+  "enforcement": "on",
+  "enforcement_resume_at": null,
+  "degraded": false,
+  "soft_threshold_pct": 80,
+  "primary": {
+    "id": "session", "window": "5h", "pace": 0.5,
+    "burn_rate_hr": 8, "sustainable_hr": 16,
+    "eta_hours": 9, "fits_window": true
+  },
+  "budgets": [
+    {
+      "id": "session", "scope": "global", "window": "5h",
+      "effective_limit_usd": 100, "spent_usd": 20, "remaining_usd": 80,
+      "pct": 20, "action": "block", "exhausted": false, "soft": false,
+      "burn_rate_hr": 8, "sustainable_hr": 16, "pace": 0.5,
+      "bump_usd": 25, "bump_expires_at": 4102444800000
+    }
+  ]
+}
+"""
+
+/// Degraded enforcement, a pace past the red threshold, and a window the spend
+/// does not fit — the pessimistic end of the burn section.
+let statusFixtureDegraded = """
+{
+  "enforcement": "on",
+  "enforcement_resume_at": null,
+  "degraded": true,
+  "soft_threshold_pct": 80,
+  "primary": {
+    "id": "session", "window": "5h", "pace": 1.7,
+    "burn_rate_hr": 25.5, "sustainable_hr": 15,
+    "eta_hours": 1.1, "fits_window": false
+  },
+  "budgets": [
+    {
+      "id": "session", "scope": "global", "window": "5h",
+      "effective_limit_usd": 75, "spent_usd": 60, "remaining_usd": 15,
+      "pct": 80, "action": "degrade", "exhausted": false, "soft": true,
+      "burn_rate_hr": 25.5, "sustainable_hr": 15, "pace": 1.7,
+      "bump_usd": null, "bump_expires_at": null
+    }
+  ]
+}
+"""
+
+/// No traffic in the window, so the models section must vanish rather than
+/// render a header over nothing.
+let spendFixtureEmpty = """
+{
+  "from": 1785942318163,
+  "to": 1786547118163,
+  "group_by": "model",
+  "rows": []
 }
 """
 

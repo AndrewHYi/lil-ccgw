@@ -4,6 +4,10 @@ import Foundation
 // minus LilCcgwApp.swift (whose @main would collide with this top-level code)
 // together with Tests/, then runs the result.
 
+// Clear anything a previous run left in this binary's own defaults domain
+// before registering, or @AppStorage-backed state carries between runs.
+resetTestDefaults()
+
 // Mirrors what LilCcgwApp.init does at launch, so assertions about registered
 // defaults exercise the real registration rather than a test-local copy.
 UserDefaults.registerLilCcgwDefaults()
@@ -15,6 +19,10 @@ runDeriveTests()
 
 // Render tests host real SwiftUI views, so they need the main actor.
 await MainActor.run { runRenderTests() }
+
+// View tests render the panel, settings and help views. Async as well as
+// main-actor isolated, because each state is reached through a real refresh.
+await runViewTests()
 
 // Model tests are async and main-actor isolated. Top-level `await` in main.swift
 // is the pattern that works here — a DispatchSemaphore around a @MainActor task
