@@ -19,7 +19,10 @@ struct SettingsView: View {
 
 // MARK: - General
 
-private struct GeneralPane: View {
+// Panes are internal, not private, so each can be rendered on its own. A
+// TabView only lays out the selected tab, so rendering SettingsView covered
+// exactly one of the three.
+struct GeneralPane: View {
     @Bindable var model: GatewayModel
 
     @AppStorage(DefaultsKey.gatewayHost) private var host = "127.0.0.1"
@@ -91,7 +94,7 @@ private struct GeneralPane: View {
 
 // MARK: - Display
 
-private struct DisplayPane: View {
+struct DisplayPane: View {
     @Bindable var model: GatewayModel
 
     @AppStorage(DefaultsKey.titleMode) private var titleModeRaw = TitleMode.spendOfLimit.rawValue
@@ -100,7 +103,7 @@ private struct DisplayPane: View {
     @AppStorage(DefaultsKey.forcedTier) private var forcedTier = ""
 
     private var titleMode: TitleMode {
-        TitleMode(rawValue: titleModeRaw) ?? .iconAndSpend
+        TitleMode.resolve(titleModeRaw)
     }
 
     /// Live data when the gateway is reachable, clearly-labelled sample data
@@ -191,7 +194,7 @@ private struct DisplayPane: View {
 
 /// A mock menu bar strip so the choice can be judged in context rather than in
 /// the abstract. Renders the real `MenuBarLabel`, never a copy of it.
-private struct MenuBarPreview: View {
+struct MenuBarPreview: View {
     let snapshot: GatewaySnapshot
     let scene: SkitScene
     let heat: BudgetHeat
@@ -218,7 +221,7 @@ private struct MenuBarPreview: View {
 
 // MARK: - Alerts
 
-private struct AlertsPane: View {
+struct AlertsPane: View {
     @AppStorage(DefaultsKey.notifySoft) private var notifySoft = true
     @AppStorage(DefaultsKey.notifyDown) private var notifyDown = true
     @AppStorage(PanelSection.budgets.defaultsKey) private var showBudgets = true

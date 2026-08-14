@@ -455,14 +455,39 @@ struct PanelView: View {
 
     // MARK: - Helpers
 
-    private var topModels: [SpendRow]? {
-        model.snapshot.spend?.rows
+    private var topModels: [SpendRow]? { PanelDerive.topModels(model.snapshot.spend) }
+
+    private func color(for budget: Budget, softThreshold: Double) -> Color {
+        PanelDerive.budgetColor(budget, softThreshold: softThreshold)
+    }
+
+    private func paceColor(_ pace: Double?) -> Color { PanelDerive.paceColor(pace) }
+}
+
+/// The panel's decisions, kept out of the view so tests can reach them.
+///
+/// Same move `Derive` made for `GatewayModel`, and for the same reason: these
+/// were `private` members of a `View`, so nothing could assert them even from
+/// inside the module. Rendering the panel exercises them, but only for whatever
+/// state the fixture happens to hold — it cannot pin a threshold. The pace
+/// thresholds in particular are copied from the dashboard, and nothing else in
+/// the repo would notice if they drifted apart.
+enum PanelDerive {
+    /// The three costliest models, or nil when there is no breakdown at all.
+    ///
+    /// Nil and empty mean different things to the panel: nil is "not fetched",
+    /// empty is "no traffic in the window", and both must hide the section rather
+    /// than render a header over nothing.
+    static func topModels(_ spend: SpendReport?) -> [SpendRow]? {
+        spend?.rows
             .sorted { $0.costUsd > $1.costUsd }
             .prefix(3)
             .map { $0 }
     }
 
-    private func color(for budget: Budget, softThreshold: Double) -> Color {
+    /// Bar colour for one budget. The gateway owns the soft threshold, so it is
+    /// passed in rather than assumed to be 80.
+    static func budgetColor(_ budget: Budget, softThreshold: Double) -> Color {
         if budget.exhausted { return .red }
         if budget.soft || budget.pct >= softThreshold { return .orange }
         return .accentColor
@@ -470,7 +495,7 @@ struct PanelView: View {
 
     /// Matches the dashboard's green/amber/red pace treatment so the two
     /// surfaces never disagree about whether the current burn is a problem.
-    private func paceColor(_ pace: Double?) -> Color {
+    static func paceColor(_ pace: Double?) -> Color {
         guard let pace else { return .secondary }
         if pace >= 1.5 { return .red }
         if pace >= 1.0 { return .orange }

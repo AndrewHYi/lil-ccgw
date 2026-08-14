@@ -130,17 +130,57 @@ func runViewTests() async {
         let m = await model()
         expectRenders(SettingsView(model: m), "settings")
 
+        // A TabView lays out only the selected tab, so rendering SettingsView
+        // reached exactly one of three panes. Each is rendered directly, which is
+        // why they are internal rather than private.
+        expectRenders(GeneralPane(model: m), "general pane")
+        expectRenders(DisplayPane(model: m), "display pane")
+        expectRenders(AlertsPane(), "alerts pane")
+
         // The display pane's preview switches between live and sample data on
-        // reachability, so render it against a down model too.
+        // reachability, so render it against a down model too — the sample path
+        // is the one a first-run user sees.
         let down = await model(status: nil, health: nil, spend: nil)
         expectRenders(SettingsView(model: down), "settings with the gateway down")
+        expectRenders(DisplayPane(model: down), "display pane with no live data")
 
-        // Every title mode changes the preview row.
+        // Every title mode changes the preview row, and every forced tier
+        // changes the glyph it previews.
         for mode in TitleMode.allCases {
             UserDefaults.standard.set(mode.rawValue, forKey: DefaultsKey.titleMode)
-            expectRenders(SettingsView(model: m), "settings previewing \(mode.rawValue)")
+            expectRenders(DisplayPane(model: m), "display pane previewing \(mode.rawValue)")
         }
         UserDefaults.standard.set(TitleMode.spendOfLimit.rawValue, forKey: DefaultsKey.titleMode)
+
+        for tier in SkitTier.allCases {
+            UserDefaults.standard.set(tier.rawValue, forKey: DefaultsKey.forcedTier)
+            expectRenders(DisplayPane(model: m), "display pane forced to \(tier.rawValue)")
+        }
+        UserDefaults.standard.set("", forKey: DefaultsKey.forcedTier)
+    }
+
+    T.suite("the menu bar preview renders, clock included") {
+        // This row is the only caller of Fmt.clockTime, which had no assertions
+        // at all despite building a locale-dependent DateFormatter.
+        let (snap, budget) = MenuBarLabel.sampleSnapshot()
+        for mode in TitleMode.allCases {
+            expectRenders(
+                MenuBarPreview(snapshot: snap, scene: SkitScene.scene(for: .ok),
+                               heat: .normal, frame: 0, mode: mode, budget: budget),
+                "menu bar preview in \(mode.rawValue)")
+        }
+    }
+
+    T.suite("one title-mode fallback, shared") {
+        // The menu bar fell back to .spendOfLimit and the Settings preview to
+        // .iconAndSpend, so an unrecognised stored value made the preview show a
+        // different mode than the menu bar it previews.
+        T.equal(TitleMode.resolve(nil), .spendOfLimit, "nil resolves to the registered default")
+        T.equal(TitleMode.resolve(""), .spendOfLimit, "so does empty")
+        T.equal(TitleMode.resolve("nonsense"), .spendOfLimit, "so does an unrecognised value")
+        for mode in TitleMode.allCases {
+            T.equal(TitleMode.resolve(mode.rawValue), mode, "\(mode.rawValue) round-trips")
+        }
     }
 
     T.suite("help renders and covers every control the panel has") {

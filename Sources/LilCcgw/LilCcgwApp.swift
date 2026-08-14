@@ -11,7 +11,7 @@ struct LilCcgwApp: App {
     }
 
     private var titleMode: TitleMode {
-        TitleMode(rawValue: titleModeRaw) ?? .spendOfLimit
+        TitleMode.resolve(titleModeRaw)
     }
 
     var body: some Scene {

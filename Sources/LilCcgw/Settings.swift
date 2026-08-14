@@ -13,6 +13,17 @@ enum TitleMode: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// The mode a stored raw value means, with one fallback for the whole app.
+    ///
+    /// There used to be two. The menu bar fell back to `.spendOfLimit` and the
+    /// Settings preview to `.iconAndSpend`, so an unrecognised stored value made
+    /// the preview show a different mode than the menu bar it claims to preview —
+    /// the one thing a preview must never do. `.spendOfLimit` wins because it is
+    /// also the registered default.
+    static func resolve(_ raw: String?) -> TitleMode {
+        TitleMode(rawValue: raw ?? "") ?? .spendOfLimit
+    }
+
     var label: String {
         switch self {
         case .spendOfLimit: return "Spend / limit + window"

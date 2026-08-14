@@ -7,17 +7,17 @@
 #
 # Regenerate: scripts/test.sh --coverage --update-floors
 GatewayClient.swift 92.68
-GatewayModel.swift 72.85
+GatewayModel.swift 73.13
 HelpView.swift 100.00
 HelpWindow.swift 94.74
 MenuBarLabel.swift 97.90
 Models.swift 95.65
 Notifier.swift 48.84
-PanelView.swift 71.87
+PanelView.swift 72.01
 ServiceControl.swift 92.67
-Settings.swift 96.63
-SettingsView.swift 37.13
+Settings.swift 97.87
+SettingsView.swift 91.93
 SettingsWindow.swift 90.91
-SkitScene.swift 99.57
+SkitScene.swift 100.00
 Transport.swift 52.27
-TOTAL 72.22
+TOTAL 82.94
