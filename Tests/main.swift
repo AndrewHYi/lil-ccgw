@@ -16,13 +16,21 @@ runModelsTests()
 runPresentationTests()
 runSkitTests()
 runDeriveTests()
+runTransportTests()
 
 // Render tests host real SwiftUI views, so they need the main actor.
 await MainActor.run { runRenderTests() }
 
+// Window helpers touch NSApp, so main actor as well.
+await MainActor.run { runWindowTests() }
+
 // View tests render the panel, settings and help views. Async as well as
 // main-actor isolated, because each state is reached through a real refresh.
 await runViewTests()
+
+// Process control, driven through a fake environment — nothing here spawns
+// launchctl, so the suite still runs with the gateway stopped.
+await runServiceControlTests()
 
 // Model tests are async and main-actor isolated. Top-level `await` in main.swift
 // is the pattern that works here — a DispatchSemaphore around a @MainActor task

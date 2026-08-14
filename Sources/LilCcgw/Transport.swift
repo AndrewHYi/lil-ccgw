@@ -39,7 +39,15 @@ struct URLSessionTransport: Transport {
         self.session = URLSession(configuration: config)
     }
 
-    func send(_ request: GatewayRequest, to url: URL, token: String?) async throws -> Data {
+    /// Builds the `URLRequest` for a gateway call.
+    ///
+    /// Split out from `send` so the header and body rules are testable without a
+    /// listening socket. The token header in particular has to go out on every
+    /// request the moment `~/.ccgw/token` exists — see `ccgw-api-contract` — and
+    /// nothing else asserts that it does.
+    static func urlRequest(
+        for request: GatewayRequest, to url: URL, token: String?
+    ) -> URLRequest {
         var req = URLRequest(url: url)
         req.httpMethod = request.method
         if let token {
@@ -49,6 +57,26 @@ struct URLSessionTransport: Transport {
             req.setValue("application/json", forHTTPHeaderField: "content-type")
             req.httpBody = body
         }
+        return req
+    }
+
+    /// Turns a completed URL load into either bytes or a `GatewayError`.
+    ///
+    /// Pure, and separate from `send` because this is the code that decides what
+    /// the entire UI shows when a call goes wrong — dashes and "unreachable"
+    /// versus a specific HTTP message. It was previously reachable only through
+    /// a real socket, so `GatewayError.http` was only ever tested by
+    /// constructing it by hand rather than by the code that builds it.
+    static func result(data: Data, response: URLResponse?) throws -> Data {
+        guard let http = response as? HTTPURLResponse else { throw GatewayError.unreachable }
+        guard (200..<300).contains(http.statusCode) else {
+            throw GatewayError.http(http.statusCode, String(data: data, encoding: .utf8))
+        }
+        return data
+    }
+
+    func send(_ request: GatewayRequest, to url: URL, token: String?) async throws -> Data {
+        let req = Self.urlRequest(for: request, to: url, token: token)
 
         let data: Data
         let response: URLResponse
@@ -60,10 +88,6 @@ struct URLSessionTransport: Transport {
             // and DNS-failed doesn't change what the user can do about it.
             throw GatewayError.unreachable
         }
-        guard let http = response as? HTTPURLResponse else { throw GatewayError.unreachable }
-        guard (200..<300).contains(http.statusCode) else {
-            throw GatewayError.http(http.statusCode, String(data: data, encoding: .utf8))
-        }
-        return data
+        return try Self.result(data: data, response: response)
     }
 }

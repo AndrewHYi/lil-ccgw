@@ -13,6 +13,39 @@ import Foundation
 enum ServiceControl {
     static let label = "io.ccgw.gateway"
 
+    /// Everything here that touches the machine, in one injectable place.
+    ///
+    /// This type is a namespace of statics called from eight sites in
+    /// `GatewayModel`, so turning it into an instance would ripple further than
+    /// the problem deserves. Swapping one struct keeps every call site and still
+    /// makes the logic reachable — the two-step stop, the exit-code-3 special
+    /// case, the `lsof` output parsing — all of which had real bugs and none of
+    /// which a test could get to while `run` was a `private static` wrapping
+    /// `Process`.
+    ///
+    /// `sleep` is in here for speed, not correctness: `stop()` waits 700ms twice
+    /// to let launchd settle, and a suite that really waited would be slower than
+    /// every other test combined.
+    struct Environment: Sendable {
+        var run: @Sendable (String, [String]) async -> Result
+        var agentInstalled: @Sendable () -> Bool
+        var cliInstalled: @Sendable () -> Bool
+        var sleep: @Sendable (Duration) async -> Void
+
+        static let live = Environment(
+            run: { path, args in await ServiceControl.spawn(path, args) },
+            agentInstalled: {
+                FileManager.default.fileExists(atPath: ServiceControl.plistPath.path)
+            },
+            cliInstalled: {
+                FileManager.default.isExecutableFile(atPath: ServiceControl.ccgwBinary.path)
+            },
+            sleep: { try? await Task.sleep(for: $0) }
+        )
+    }
+
+    nonisolated(unsafe) static var environment = Environment.live
+
     /// Not on PATH — the setup skill installs it under ~/.ccgw, so every
     /// invocation uses the absolute path.
     static var ccgwBinary: URL {
@@ -28,13 +61,9 @@ enum ServiceControl {
     static var domainTarget: String { Derive.domainTarget(uid: getuid()) }
     static var serviceTarget: String { Derive.serviceTarget(uid: getuid(), label: label) }
 
-    static var isAgentInstalled: Bool {
-        FileManager.default.fileExists(atPath: plistPath.path)
-    }
+    static var isAgentInstalled: Bool { environment.agentInstalled() }
 
-    static var isCLIInstalled: Bool {
-        FileManager.default.isExecutableFile(atPath: ccgwBinary.path)
-    }
+    static var isCLIInstalled: Bool { environment.cliInstalled() }
 
     /// Whether launchd currently has the agent loaded. Distinct from "the HTTP
     /// port answers" — the agent can be loaded while the process is still
@@ -70,13 +99,13 @@ enum ServiceControl {
                                : detail.trimmingCharacters(in: .whitespacesAndNewlines))
         }
 
-        try? await Task.sleep(for: .milliseconds(700))
+        await environment.sleep(.milliseconds(700))
         guard let pid = await listeningPID() else { return nil }
 
         // Something is still serving with no agent behind it. Nothing can respawn
         // it now, so terminating is safe and is what the user asked for.
         _ = await run("/bin/kill", [String(pid)])
-        try? await Task.sleep(for: .milliseconds(700))
+        await environment.sleep(.milliseconds(700))
         if let survivor = await listeningPID() {
             throw ServiceError.message(
                 "Agent unloaded, but pid \(survivor) is still serving the port and would not terminate.")
@@ -165,8 +194,12 @@ enum ServiceControl {
         return result
     }
 
-    /// Runs off the main actor so a hung launchctl can never freeze the menu.
     private static func run(_ launchPath: String, _ args: [String]) async -> Result {
+        await environment.run(launchPath, args)
+    }
+
+    /// Runs off the main actor so a hung launchctl can never freeze the menu.
+    private static func spawn(_ launchPath: String, _ args: [String]) async -> Result {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let process = Process()

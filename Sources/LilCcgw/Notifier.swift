@@ -58,16 +58,30 @@ enum Notifier {
     /// keying off it alone meant the pane could render toggles with no warning
     /// attached while notifications were in fact impossible.
     static var explanation: String? {
-        if !isAvailable {
-            return "Running unbundled — notifications need the assembled .app."
+        explanation(available: isAvailable, status: status)
+    }
+
+    /// The decision behind `explanation`, taking its inputs rather than reading
+    /// them.
+    ///
+    /// Split out because the test binary has no bundle identifier, so
+    /// `isAvailable` is always false there and the early return swallowed every
+    /// other branch — the denied case, the one users are most likely to hit on
+    /// an ad-hoc signed build, could not be reached by a test at all.
+    static func explanation(available: Bool, status: Status) -> String? {
+        if !available {
+            return unbundledExplanation
         }
         switch status {
         case .unavailable:
-            return "Running unbundled — notifications need the assembled .app."
+            return unbundledExplanation
         case .denied:
             return "macOS denied notifications for this app. Alerts still show in the menu."
         case .authorized, .notRequested:
             return nil
         }
     }
+
+    static let unbundledExplanation =
+        "Running unbundled — notifications need the assembled .app."
 }
