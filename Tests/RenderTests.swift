@@ -88,6 +88,138 @@ func runRenderTests() {
         }
     }
 
+    T.suite("animation frames do not move the glyph inside its slot") {
+        // The slot pins the *layout* width, which is what stops the status item
+        // resizing — the suite above proves it still does. It does nothing about
+        // the glyph sliding around inside that slot: centred in 20pt, a 13pt
+        // symbol sits 3.5pt from the left edge and a 16pt one sits 2pt, so the
+        // icon jumps sideways on every tick while the item itself holds still.
+        //
+        // Measured before the fix: crit and zen moved 4px, payday 6px, melt 2px.
+        // Layout-width assertions cannot see any of it, which is why this
+        // measures ink — the leftmost and rightmost columns that actually get
+        // drawn.
+        func ink<V: View>(_ view: V) -> (lo: Int, hi: Int)? {
+            let host = NSHostingView(rootView: view)
+            host.frame = CGRect(x: 0, y: 0, width: 60, height: 24)
+            host.layout()
+            guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return nil }
+            host.cacheDisplay(in: host.bounds, to: rep)
+            var lo = Int.max, hi = -1
+            for x in 0..<rep.pixelsWide {
+                for y in 0..<rep.pixelsHigh where (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.05 {
+                    lo = min(lo, x); hi = max(hi, x); break
+                }
+            }
+            return hi < 0 ? nil : (lo, hi)
+        }
+
+        for tier in SkitTier.allCases {
+            let scene = SkitScene.scene(for: tier)
+            guard scene.frames.count > 1 else { continue }
+            let extents = (0..<scene.frames.count).compactMap {
+                ink(label(mode: .iconOnly, tier: tier, frame: $0))
+            }
+            guard extents.count == scene.frames.count else {
+                T.fail("\(tier.rawValue): not every frame rasterised")
+                continue
+            }
+            let lefts = extents.map(\.lo), rights = extents.map(\.hi)
+
+            // The left edge is the anchor the eye tracks, and it must be exact.
+            T.equal(lefts.max()! - lefts.min()!, 0,
+                    "\(tier.rawValue) glyph's left edge holds still across frames")
+
+            // The right edge gets 1px (0.5pt at 2×), because that is the floor
+            // SF Symbols actually offers rather than a number chosen to pass:
+            // `moon.zzz` against `moon.zzz.fill` — a canonical outline/fill pair
+            // of identical natural width — still differs by 1px where the fill
+            // antialiases. That is the shape changing, which is the animation
+            // working. Anything larger is the glyph being re-centred.
+            T.expect(rights.max()! - rights.min()! <= 1,
+                     "\(tier.rawValue) glyph's right edge moves at most 1px (\(rights.max()! - rights.min()!))")
+        }
+    }
+
+    T.suite("a tier's frames share one natural width") {
+        // The mechanism behind the suite above, asserted directly because it is
+        // the thing to preserve when picking symbols: frames drawn from a single
+        // family (thermometer.medium/high, flame/flame.fill) match automatically,
+        // and two unrelated symbols almost never do. Getting this right is what
+        // makes the ink line up; the ink test is what proves it did.
+        for tier in SkitTier.allCases {
+            let widths = SkitScene.scene(for: tier).frames.map { size(Image(systemName: $0)).width }
+            T.equal(Set(widths).count, 1,
+                    "\(tier.rawValue) frames all measure the same (\(widths))")
+        }
+    }
+
+    T.suite("no two states share a silhouette") {
+        // The bitmap-hash test proves two tiers are not byte-identical. It says
+        // nothing about being *confusable*, and that is the property that
+        // matters in a monochrome 20pt slot.
+        //
+        // Caught a real near-miss: pairing melt's frames as
+        // `figure.run.circle`/`.fill` — the only same-width runner pair, since
+        // `figure.*` has no fill variant — put it at 0.85 overlap with
+        // `pause.circle.fill`. Runaway spend and paused enforcement are the two
+        // states it is worst to mistake for each other.
+        func mask(_ symbol: String) -> [Bool] {
+            let host = NSHostingView(
+                rootView: Image(systemName: symbol)
+                    .frame(width: MenuBarLabel.glyphSlotWidth, alignment: .center))
+            host.frame = CGRect(x: 0, y: 0, width: 24, height: 24)
+            host.layout()
+            guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return [] }
+            host.cacheDisplay(in: host.bounds, to: rep)
+            var m: [Bool] = []
+            for y in 0..<rep.pixelsHigh {
+                for x in 0..<rep.pixelsWide {
+                    m.append((rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.35)
+                }
+            }
+            return m
+        }
+
+        // Grouped by state: frames *within* a tier are meant to look alike — that
+        // is the animation — so only cross-state pairs are compared.
+        var groups: [(String, [String])] = SkitTier.allCases.map {
+            ($0.rawValue, SkitScene.scene(for: $0).frames)
+        }
+        groups.append(("unreachable", ["wifi.slash"]))
+        groups.append(("paused", ["pause.circle.fill"]))
+        groups.append(("no-data", ["circle.dotted"]))
+
+        var masks: [String: [Bool]] = [:]
+        for (_, symbols) in groups { for s in symbols where masks[s] == nil { masks[s] = mask(s) } }
+
+        // 0.6 sits above the widest legitimate overlap the ladder already
+        // carries (leaf.fill against flame.fill, 0.43) and well below the 0.85
+        // that would have shipped.
+        for i in groups.indices {
+            for j in groups.indices where j > i {
+                for a in groups[i].1 {
+                    for b in groups[j].1 {
+                        guard let ma = masks[a], let mb = masks[b],
+                              ma.count == mb.count, !ma.isEmpty else {
+                            T.fail("could not compare \(a) with \(b)")
+                            continue
+                        }
+                        var inter = 0, union = 0
+                        for k in ma.indices {
+                            if ma[k] && mb[k] { inter += 1 }
+                            if ma[k] || mb[k] { union += 1 }
+                        }
+                        let iou = union == 0 ? 1.0 : Double(inter) / Double(union)
+                        T.expect(iou < 0.6, String(format:
+                            "%@ (%@) and %@ (%@) are distinguishable — overlap %.2f",
+                            a, groups[i].0, b, groups[j].0, iou))
+                    }
+                }
+            }
+        }
+    }
+
     T.suite("no glyph is clipped by the slot") {
         // The slot is 20pt because party.popper.fill measures exactly 20 and
         // figure.mind.and.body 18; a 16pt slot clipped both. Any new glyph wider

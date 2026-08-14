@@ -154,7 +154,22 @@ extension SkitScene {
     /// subtle to be the sole difference between two adjacent tiers at menu bar
     /// size. Leading with a rising thermometer keeps the ladder monotone and
     /// gives every tier its own outline: leaf → thermometer → flame →
-    /// flame/alarm → runner → rain → popper → meditation.
+    /// alarm → bolt → rain → popper → meditation.
+    ///
+    /// `melt` is a bolt rather than the dashboard's sprinting runner because
+    /// `figure.*` symbols have no fill variant, so the only same-width pair
+    /// available was `figure.run.circle`/`.fill` — and a filled circled runner
+    /// overlaps `pause.circle.fill` by 0.85 IoU. "Runaway" and "enforcement
+    /// paused" are the two states it is most dangerous to confuse.
+    ///
+    /// **A tier's two frames must be the same symbol at the same width** — an
+    /// outline/fill pair, or two steps of one family. That is not a style
+    /// preference. The glyph sits centred in a fixed slot, so frames of unequal
+    /// width get re-centred against each other and the icon visibly slides
+    /// sideways several times a second while the item itself holds still. Four
+    /// tiers shipped that way: crit and zen moved 4px, payday 6px. `RenderTests`
+    /// now measures the drawn ink, which is the only thing that catches it —
+    /// every layout-width assertion passed throughout.
     ///
     /// Intervals mirror the dashboard's own sprite frame durations.
     static func scene(for tier: SkitTier?, dead: Budget? = nil) -> SkitScene {
@@ -199,7 +214,7 @@ extension SkitScene {
                 ])
         case .crit:
             return SkitScene(
-                tier: .crit, frames: ["flame.fill", "exclamationmark.triangle.fill"],
+                tier: .crit, frames: ["exclamationmark.triangle", "exclamationmark.triangle.fill"],
                 interval: 0.26,
                 caption: "burning down the window",
                 jokes: [
@@ -210,7 +225,7 @@ extension SkitScene {
                 ])
         case .melt:
             return SkitScene(
-                tier: .melt, frames: ["figure.run", "figure.walk"], interval: 0.18,
+                tier: .melt, frames: ["bolt", "bolt.fill"], interval: 0.18,
                 caption: "runaway",
                 jokes: [
                     "Whatever is running has stopped asking permission.",
@@ -234,7 +249,7 @@ extension SkitScene {
                 ])
         case .payday:
             return SkitScene(
-                tier: .payday, frames: ["party.popper.fill", "sparkles"],
+                tier: .payday, frames: ["party.popper", "party.popper.fill"],
                 interval: 0.5,
                 caption: "budgets reset",
                 jokes: [
@@ -245,7 +260,7 @@ extension SkitScene {
                 ])
         case .zen:
             return SkitScene(
-                tier: .zen, frames: ["figure.mind.and.body", "flame.fill"],
+                tier: .zen, frames: ["figure.mind.and.body", "figure.yoga"],
                 interval: 0.55,
                 caption: "past caring",
                 jokes: [
