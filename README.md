@@ -27,9 +27,9 @@ sonnet-5                         $3.74
 ──────────────────────────────────────
 enforcement  on
 [Restart] [Pause 60m]
-[Stop…] [Bypass…] [Re-wire]
+[Stop…] [Bypass…] [Reconnect]
 ──────────────────────────────────────
-Dashboard  Settings…            Quit
+Dashboard  Settings…  Help…     Quit
 ```
 
 [`docs/architecture.md`](docs/architecture.md) covers where the numbers come from
@@ -106,6 +106,13 @@ costs over twice the default, which is why it isn't one.
 The tracked budget defaults to whichever one the gateway nominates as primary —
 the 5-hour window, unless you pick another in Display.
 
+## Help
+
+**Help…** in the footer opens a window with a plain-language reference for
+every panel control — what each one does, and why Bypass and Reconnect are a
+pair. It's the in-app version of the Controls section below, for when you
+don't have this README open.
+
 ## The icon
 
 Two independent signals. The **glyph** and its animation speed report **pace** —
@@ -158,7 +165,7 @@ which is when you need them.
 | **Recover** | `launchctl kickstart`, then `bootstrap` | Brings the gateway back; escalates by itself. Replaces Restart while it's down |
 | **Stop** | `launchctl bootout`, then kill the listener | Real stop — confirms first |
 | **Bypass** | `ccgw bypass` | Unwires `ANTHROPIC_BASE_URL` so Claude Code goes direct |
-| **Re-wire** | `ccgw wire` | Puts `ANTHROPIC_BASE_URL` back |
+| **Reconnect** | `ccgw wire` | Puts `ANTHROPIC_BASE_URL` back — the undo for Bypass |
 
 There is no `/api/stop` or `/api/start`, which is why the bottom four shell out
 instead. A dead process can't accept a request telling it to come alive.

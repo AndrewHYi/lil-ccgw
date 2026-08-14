@@ -6,6 +6,7 @@ import SwiftUI
 struct PanelView: View {
     @Bindable var model: GatewayModel
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
 
     @AppStorage(PanelSection.budgets.defaultsKey) private var showBudgets = true
     @AppStorage(PanelSection.burn.defaultsKey) private var showBurn = true
@@ -422,7 +423,7 @@ struct PanelView: View {
                 Button("Stop…") { confirming = .stop }
                     .disabled(model.isDown && !model.agentLoaded)
                 Button("Bypass…") { confirming = .bypass }
-                Button("Re-wire") { Task { await model.wire() } }
+                Button("Reconnect") { Task { await model.wire() } }
             }
             if let error = model.lastError, !model.isDown {
                 Text(error)
@@ -442,6 +443,8 @@ struct PanelView: View {
                 .keyboardShortcut("d")
             Button("Settings…") { SettingsWindow.present { openSettings() } }
                 .keyboardShortcut(",")
+            Button("Help…") { HelpWindow.present { openWindow(id: "help") } }
+                .keyboardShortcut("?")
             Spacer()
             Button("Quit") { NSApplication.shared.terminate(nil) }
                 .keyboardShortcut("q")

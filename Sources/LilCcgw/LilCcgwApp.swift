@@ -28,5 +28,9 @@ struct LilCcgwApp: App {
         Settings {
             SettingsView(model: model)
         }
+
+        Window("lil-ccgw Help", id: "help") {
+            HelpView()
+        }
     }
 }
