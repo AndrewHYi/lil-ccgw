@@ -285,6 +285,22 @@ struct PanelView: View {
                 .font(.system(size: 10))
             }
 
+            // A lapsing bumper that reverts below current spend exhausts the
+            // budget the moment it expires. The expiry time alone does not say
+            // that, and the failure is total — every request refused.
+            if let warning = Derive.bumpExpiryWarning(
+                baseLimit: budget.baseLimitUsd(),
+                spent: budget.spentUsd,
+                expiresAt: budget.bumpExpiryDate
+            ) {
+                HStack(alignment: .top, spacing: 3) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                    Text(warning).fixedSize(horizontal: false, vertical: true)
+                }
+                .font(.system(size: 9))
+                .foregroundStyle(.orange)
+            }
+
             if bumping == budget.id {
                 bumpForm(budget)
             }

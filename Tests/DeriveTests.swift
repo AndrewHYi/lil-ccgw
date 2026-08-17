@@ -148,6 +148,39 @@ func runDeriveTests() {
         T.expect(warning.contains("block"), "states the consequence")
     }
 
+    T.suite("warning when a bumper's expiry will block requests") {
+        let now = Date(timeIntervalSince1970: 1_786_756_000)
+        let soon = now.addingTimeInterval(3600)
+
+        // The case that actually happened: $75 base, $125 bumper, $155 spent.
+        // At expiry the cap reverts to $75 — below spend — and every request
+        // starts failing with no warning and nothing done.
+        let warning = Derive.bumpExpiryWarning(
+            baseLimit: 75, spent: 155.20, expiresAt: soon, now: now) ?? ""
+        T.expect(!warning.isEmpty, "a reversion below spend warns")
+        T.expect(warning.contains("$75"), "names the limit it reverts to")
+        T.expect(warning.contains("$155.20"), "names what is already spent")
+        T.expect(warning.contains("block"), "states the consequence")
+
+        // Silent when the reversion is harmless, so it reads as a real alarm
+        // rather than decoration on every bumper.
+        T.expect(Derive.bumpExpiryWarning(baseLimit: 75, spent: 20, expiresAt: soon, now: now) == nil,
+                 "spend under the base limit is fine")
+
+        // Both sides of the boundary. Equal warns: nothing is left, so the next
+        // request blocks.
+        T.expect(Derive.bumpExpiryWarning(baseLimit: 75, spent: 75, expiresAt: soon, now: now) != nil,
+                 "spend exactly at the base limit warns")
+        T.expect(Derive.bumpExpiryWarning(baseLimit: 75, spent: 74.99, expiresAt: soon, now: now) == nil,
+                 "a cent of headroom is enough")
+
+        // No live bumper means nothing is going to lapse.
+        T.expect(Derive.bumpExpiryWarning(baseLimit: 75, spent: 155, expiresAt: nil, now: now) == nil,
+                 "no bumper, no warning")
+        T.expect(Derive.bumpExpiryWarning(baseLimit: 75, spent: 155, expiresAt: now, now: now) == nil,
+                 "already expired — the damage is done, not pending")
+    }
+
     T.suite("re-issuing a bumper keeps its expiry") {
         let now = Date(timeIntervalSince1970: 1_786_756_000)
 

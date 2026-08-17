@@ -378,6 +378,39 @@ let statusFixtureBumped = """
 }
 """
 
+/// A live bumper whose expiry will drop the cap below what is already spent —
+/// $75 base, $125 bumper, $155.20 spent. Captured from the real incident: when
+/// this lapsed, the gateway began refusing every request with no warning.
+let statusFixtureBumpExpiring = """
+{
+  "enforcement": "on",
+  "enforcement_resume_at": null,
+  "degraded": false,
+  "soft_threshold_pct": 80,
+  "primary": {
+    "id": "session", "window": "5h", "pace": 1.63,
+    "burn_rate_hr": 24.5, "sustainable_hr": 15,
+    "eta_hours": 1.8, "fits_window": false
+  },
+  "budgets": [
+    {
+      "id": "session", "scope": "global", "window": "5h",
+      "effective_limit_usd": 200, "spent_usd": 155.20, "remaining_usd": 44.80,
+      "pct": 77.6, "action": "block", "exhausted": false, "soft": false,
+      "burn_rate_hr": 24.5, "sustainable_hr": 15, "pace": 1.63,
+      "bump_usd": 125, "bump_expires_at": 4102444800000
+    },
+    {
+      "id": "monthly", "scope": "global", "window": "30d",
+      "effective_limit_usd": 1200, "spent_usd": 463.42, "remaining_usd": 736.58,
+      "pct": 38.6, "action": "block", "exhausted": false, "soft": false,
+      "burn_rate_hr": null, "sustainable_hr": null, "pace": null,
+      "bump_usd": null, "bump_expires_at": null
+    }
+  ]
+}
+"""
+
 /// Degraded enforcement, a pace past the red threshold, and a window the spend
 /// does not fit — the pessimistic end of the burn section.
 let statusFixtureDegraded = """

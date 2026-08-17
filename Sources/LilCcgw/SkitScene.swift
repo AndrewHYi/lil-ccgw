@@ -372,6 +372,26 @@ enum Derive {
         return "below the \(Fmt.usd(spent)) already spent — requests block immediately"
     }
 
+    /// Warns when a live bumper's expiry will drop the cap below what has
+    /// already been spent, or nil when the reversion is harmless.
+    ///
+    /// The expiry itself is shown next to the bumper, but a time is not a
+    /// consequence: reverting to a base limit *under* current spend exhausts the
+    /// budget the instant the bumper lapses, and the gateway starts refusing
+    /// every request with no warning and no action taken. Verified the hard way —
+    /// a $125 bumper on a $75 base lapsed at 21:18 with $155 spent, and the next
+    /// request failed with `403 budget 'session' exhausted`.
+    ///
+    /// Deliberately silent when nothing is at stake, so it reads as a real alarm
+    /// rather than decoration on every bumper.
+    static func bumpExpiryWarning(
+        baseLimit: Double, spent: Double, expiresAt: Date?, now: Date = Date()
+    ) -> String? {
+        guard let expiresAt, expiresAt > now, baseLimit <= spent else { return nil }
+        return "reverts to \(Fmt.limit(baseLimit)) — under the \(Fmt.usd(spent)) "
+             + "already spent, so requests will block then"
+    }
+
     /// Whole minutes left on a bumper, for re-issuing it without moving its
     /// expiry.
     ///

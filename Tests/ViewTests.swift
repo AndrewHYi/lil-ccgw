@@ -105,6 +105,13 @@ func runViewTests() async {
         // header with nothing under it.
         let noSpend = await model(spend: spendFixtureEmpty)
         expectRenders(PanelView(model: noSpend), "panel with no spend rows")
+
+        // A bumper about to lapse below current spend renders its warning, so
+        // the panel is taller than the same panel without one.
+        let expiring = await model(status: statusFixtureBumpExpiring)
+        expectRenders(PanelView(model: expiring), "panel with a bumper expiring below spend")
+        T.expect(size(PanelView(model: expiring)).height > size(PanelView(model: bumped)).height,
+                 "the expiry warning adds height rather than silently not rendering")
     }
 
     T.suite("the bumper form renders open, in both of its shapes") {
