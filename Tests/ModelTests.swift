@@ -243,6 +243,90 @@ func runModelTests() async {
     }
 
     do {
+        T.currentSuite = "a limit change preserves every other budget"
+        let t = MockTransport.healthy()
+        let m = model(t)
+        await m.setLimit(budgetId: "monthly", limitUsd: 2000)
+
+        // A read has to precede the write: `budgets` replaces the array
+        // wholesale, so the payload must be the gateway's own list.
+        let budgetCalls = t.requests.filter { $0.request.path.hasPrefix("/api/budgets") }
+        T.equal(budgetCalls.count, 2, "one read, one write")
+        T.equal(budgetCalls.first?.request.method, "GET", "reads the config first")
+        T.equal(budgetCalls.last?.request.method, "PUT", "then writes it back")
+
+        guard let sent = budgetCalls.last?.request.jsonBody?["budgets"] as? [[String: Any]] else {
+            return T.expect(false, "budget array sent")
+        }
+        T.equal(sent.count, 4, "every budget survives the write")
+
+        let byId = Dictionary(uniqueKeysWithValues: sent.compactMap { b -> (String, [String: Any])? in
+            guard let id = b["id"] as? String else { return nil }
+            return (id, b)
+        })
+        T.close(byId["monthly"]?["limit_usd"] as? Double ?? -1, 2000, "target limit changed")
+        T.close(byId["weekly"]?["limit_usd"] as? Double ?? -1, 300, "others left alone")
+
+        // The two keys a rebuild from /api/status would lose: an active bumper,
+        // and the match a project-scoped budget cannot validate without.
+        T.close(byId["session"]?["bump_usd"] as? Double ?? -1, 125, "live bumper preserved")
+        T.equal(byId["session"]?["bump_expires_at"] as? Double, 1787266561266, "and its expiry")
+        T.equal(byId["scratch"]?["match"] as? String, "~/personal/lil-ccgw",
+                "unmodelled keys survive the round trip")
+    }
+
+    do {
+        T.currentSuite = "a limit change refuses an unknown budget"
+        let t = MockTransport.healthy()
+        let m = model(t)
+        await m.setLimit(budgetId: "nope", limitUsd: 500)
+
+        let writes = t.requests.filter {
+            $0.request.path.hasPrefix("/api/budgets") && $0.request.method == "PUT"
+        }
+        T.equal(writes.count, 0, "nothing written when the id is not in the config")
+        T.expect(m.lastError?.contains("nope") == true, "and the reason names the budget")
+    }
+
+    do {
+        T.currentSuite = "a limit change refuses a zero limit locally"
+        // The gateway 400s on this, but its error is about config validation
+        // and reaches the user as noise. Refusing before the request also means
+        // no read-modify-write cycle runs for an edit that cannot land.
+        let t = MockTransport.healthy()
+        let m = model(t)
+        await m.setLimit(budgetId: "monthly", limitUsd: 0)
+
+        T.equal(t.callCount("/api/budgets"), 0, "no request at all")
+        T.expect(m.lastError != nil, "still reported")
+    }
+
+    do {
+        T.currentSuite = "a limit change stops when the config read makes no sense"
+        // A 200 with the wrong shape is the failure a decoder would turn into an
+        // empty array, and an empty array PUT back deletes every budget.
+        let t = MockTransport.healthy().stub("/api/budgets", json: #"{"ok":true}"#)
+        let m = model(t)
+        await m.setLimit(budgetId: "monthly", limitUsd: 2000)
+
+        let writes = t.requests.filter {
+            $0.request.path.hasPrefix("/api/budgets") && $0.request.method == "PUT"
+        }
+        T.equal(writes.count, 0, "nothing written")
+        T.expect(m.lastError != nil, "and it reports rather than going quiet")
+    }
+
+    do {
+        T.currentSuite = "a refused limit write surfaces the gateway's reason"
+        let t = MockTransport.healthy().fail("/api/budgets", with: .http(400, "budget monthly: bad window"))
+        let m = model(t)
+        await m.setLimit(budgetId: "monthly", limitUsd: 2000)
+
+        T.expect(m.lastError?.contains("bad window") == true,
+                 "the gateway's own text survives the refresh that follows")
+    }
+
+    do {
         T.currentSuite = "a refused re-bump reports rather than going quiet"
         // The failure mode this ordering cannot avoid: the clear lands, the
         // re-bump is refused, and the budget is left with no bumper at all. It

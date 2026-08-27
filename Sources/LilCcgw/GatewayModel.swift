@@ -319,6 +319,17 @@ final class GatewayModel {
         }
     }
 
+    /// Changes a budget's configured limit.
+    ///
+    /// Unlike a bumper this is permanent and applies to every Claude Code
+    /// request, which is why the only affordance for it lives in Settings
+    /// rather than a click away in the menu.
+    func setLimit(budgetId: String, limitUsd: Double) async {
+        await perform {
+            try await self.client.setLimit(budgetId: budgetId, limitUsd: limitUsd)
+        }
+    }
+
     /// Budgets a bumper can actually be applied to. Excludes the overall ceiling,
     /// which the gateway rejects.
     var bumpableBudgets: [Budget] {

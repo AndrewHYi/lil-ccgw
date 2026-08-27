@@ -350,6 +350,33 @@ enum Derive {
         all.filter { !$0.isCeiling(among: all) }
     }
 
+    /// The limit a typed field would apply, or nil when it is not a limit.
+    ///
+    /// Parsing lives here rather than in the view so the rejected cases are
+    /// assertable: a stray `$`, a thousands separator, and an empty field all
+    /// reach it, and a zero or negative limit is refused outright because the
+    /// gateway rejects it with a 400 and the user learns nothing from that.
+    static func parsedLimit(_ text: String) -> Double? {
+        let cleaned = text
+            .replacingOccurrences(of: "$", with: "")
+            .replacingOccurrences(of: ",", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        guard let value = Double(cleaned), value > 0 else { return nil }
+        return value
+    }
+
+    /// Whether a limit edit is worth sending: parseable, actually different from
+    /// what is configured, and not racing an action already in flight.
+    ///
+    /// The unchanged case matters more than it looks. The write is a
+    /// read-modify-write of the gateway's whole budget array, so a no-op Apply
+    /// is not free — it is a config rewrite and an audit-logged event for a
+    /// value nobody changed.
+    static func limitApplyEnabled(draft: String, current: Double, isBusy: Bool) -> Bool {
+        guard !isBusy, let value = parsedLimit(draft) else { return false }
+        return value != current
+    }
+
     /// The cap a bumper produces: the budget's own limit with the bumper on top.
     ///
     /// The panel shows this beside both amount fields because it is the number

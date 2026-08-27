@@ -254,6 +254,37 @@ let statusFixture = """
 }
 """
 
+/// `GET /api/budgets` — the raw config array, which is a different shape from
+/// the budgets inside `/api/status`: `limit_usd` rather than
+/// `effective_limit_usd`, no spend, and keys this app does not model at all.
+///
+/// It carries a live bumper on `session` and a `match` on a project-scoped
+/// budget on purpose. A limit write replaces the whole array, so both are the
+/// things a naive rebuild-from-status would silently destroy.
+let budgetsConfigFixture = """
+{
+  "budgets": [
+    {
+      "id": "session", "scope": "global", "window": "5h",
+      "limit_usd": 75, "action": "block",
+      "bump_usd": 125, "bump_expires_at": 1787266561266
+    },
+    {
+      "id": "weekly", "scope": "global", "window": "7d",
+      "limit_usd": 300, "action": "warn"
+    },
+    {
+      "id": "monthly", "scope": "global", "window": "30d",
+      "limit_usd": 1200, "action": "block"
+    },
+    {
+      "id": "scratch", "scope": "project", "match": "~/personal/lil-ccgw",
+      "window": "1d", "limit_usd": 5, "action": "warn"
+    }
+  ]
+}
+"""
+
 /// A status payload with `primary` absent entirely — the gateway omits it when
 /// no budget has traffic. The app must fall back to the first budget rather than
 /// blanking the title.

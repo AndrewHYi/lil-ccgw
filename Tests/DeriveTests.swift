@@ -302,6 +302,26 @@ func runDeriveTests() {
         T.expect(true, "post is safe when unavailable")
     }
 
+    T.suite("a typed budget limit is parsed before it is sent") {
+        T.close(Derive.parsedLimit("2000") ?? -1, 2000, "plain digits")
+        T.close(Derive.parsedLimit(" $2,000 ") ?? -1, 2000, "currency decoration is stripped")
+        T.close(Derive.parsedLimit("1999.50") ?? -1, 1999.50, "cents survive")
+        T.expect(Derive.parsedLimit("") == nil, "an empty field is not a limit")
+        T.expect(Derive.parsedLimit("lots") == nil, "neither is prose")
+        // The gateway 400s on these; refusing locally means the user sees why.
+        T.expect(Derive.parsedLimit("0") == nil, "zero is refused")
+        T.expect(Derive.parsedLimit("-50") == nil, "so is negative")
+
+        T.expect(Derive.limitApplyEnabled(draft: "2000", current: 1200, isBusy: false),
+                 "a real change is applicable")
+        T.expect(!Derive.limitApplyEnabled(draft: "1200", current: 1200, isBusy: false),
+                 "re-applying the configured value is a config rewrite for nothing")
+        T.expect(!Derive.limitApplyEnabled(draft: "2000", current: 1200, isBusy: true),
+                 "not while another action is in flight")
+        T.expect(!Derive.limitApplyEnabled(draft: "", current: 1200, isBusy: false),
+                 "not on an unparseable draft")
+    }
+
     T.suite("spend window label") {
         // The breakdown header claims a window; it has to match the budget the
         // breakdown was actually fetched for.

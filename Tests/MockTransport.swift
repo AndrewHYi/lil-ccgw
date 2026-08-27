@@ -54,7 +54,7 @@ final class MockTransport: Transport, @unchecked Sendable {
         m.stub("/api/health", json: healthFixture)
         m.stub("/api/spend", json: spendFixture)
         m.stub("/api/restart", json: #"{"restarting":true}"#)
-        m.stub("/api/budgets", json: #"{"budgets":[]}"#)
+        m.stub("/api/budgets", json: budgetsConfigFixture)
         return m
     }
 

@@ -124,6 +124,42 @@ actor GatewayClient {
                            body: ["bump": ["budget_id": budgetId, "clear": true]])
     }
 
+    /// Change one budget's configured limit — the denominator the menu bar
+    /// renders spend against.
+    ///
+    /// Three things make this read-modify-write rather than a one-line PUT:
+    ///
+    /// 1. `budgets` in the request body **replaces the whole array**. There is
+    ///    no per-budget patch verb, so sending only the edited budget deletes
+    ///    every other one.
+    /// 2. The array must be the gateway's own, untouched apart from the single
+    ///    field. It carries `bump_usd` / `bump_expires_at` for live bumpers and
+    ///    `match` for project-scoped budgets; rebuilding it from `/api/status`
+    ///    would silently clear an active bumper.
+    /// 3. It is deliberately not decoded into a `Codable` model. A key this app
+    ///    does not model — one a later gateway adds — has to survive the round
+    ///    trip, and a typed struct would drop it.
+    ///
+    /// The whole exchange stays inside the actor so no `[String: Any]` crosses a
+    /// concurrency boundary.
+    func setLimit(budgetId: String, limitUsd: Double) async throws {
+        guard limitUsd > 0 else {
+            throw GatewayError.http(400, "limit must be greater than $0")
+        }
+
+        let data = try await send("/api/budgets", method: "GET", body: nil)
+        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard var budgets = object?["budgets"] as? [[String: Any]] else {
+            throw GatewayError.http(500, "gateway returned no budget list")
+        }
+        guard let index = budgets.firstIndex(where: { $0["id"] as? String == budgetId }) else {
+            throw GatewayError.http(400, "no budget '\(budgetId)'")
+        }
+
+        budgets[index]["limit_usd"] = limitUsd
+        _ = try await send("/api/budgets", method: "PUT", body: ["budgets": budgets])
+    }
+
     // MARK: - Plumbing
 
     private func url(_ path: String) throws -> URL {
