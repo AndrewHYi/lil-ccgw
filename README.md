@@ -94,7 +94,11 @@ then **Settings…** at the bottom (⌘, works while the panel is open). Three p
 
 - **General** — launch at login, gateway host and port, refresh intervals,
   default pause duration.
-- **Display** — what the menu bar shows, and which budget drives it.
+- **Display** — what the menu bar shows, which budget drives it, and that
+  budget's limit: the denominator in `$34/$1200`. Changing it rewrites
+  `~/.ccgw/config.json` and applies to every Claude Code request, which is why
+  it lives here rather than in the panel. A live bumper is left alone; the field
+  edits the limit underneath it.
 - **Alerts** — threshold and gateway-down notifications, plus which panel
   sections are visible.
 

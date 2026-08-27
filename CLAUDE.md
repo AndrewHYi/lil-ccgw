@@ -210,7 +210,7 @@ Hand-rolled harness in `Tests/TestSupport.swift`, ~40 lines, because XCTest and
 swift-testing both want SwiftPM or xcodebuild. It reports file and line and exits
 non-zero on failure — verify that by breaking an assertion, not by trusting it.
 
-887 assertions across fourteen suites, covering 90% of lines. **Read
+917 assertions across fourteen suites, covering 90% of lines. **Read
 `testing-lil-ccgw` before touching tests** — the harness is deliberately unusual
 and an agent that reaches for XCTest will waste an hour.
 
@@ -224,7 +224,7 @@ totalling 789 lines sat at zero while the count read 457.
 | `PresentationTests` | currency/rate/duration formatting, title modes, no-data placeholders |
 | `SkitTests` | every pace boundary from both sides, tier precedence, the zen clock, animation shape |
 | `DeriveTests` | budget heat, poll intervals, dashboard URL, bumpable filter, launchd targets, error text, accessibility label, registered defaults |
-| `ModelTests` | `GatewayModel` end to end over `MockTransport` — per-section degradation, and the exact request each control issues |
+| `ModelTests` | `GatewayModel` end to end over `MockTransport` — per-section degradation, the exact request each control issues, and the read-modify-write that changes a budget limit without losing the other budgets |
 | `RenderTests` | real SwiftUI geometry via `NSHostingView.fittingSize`, rasterised bitmap distinctness, per-frame ink stability, and silhouette overlap between states |
 | `ViewTests` | the panel, settings panes and help window rendered in every reachable state |
 | `PanelDeriveTests` | the panel's colour and breakdown decisions, including the pace bands copied from the dashboard |

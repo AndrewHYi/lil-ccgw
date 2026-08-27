@@ -149,11 +149,34 @@ identify the same budget the gateway does, or the UI offers a button that always
 fails. Only `block` budgets count when picking the widest; a wider `warn` or
 `degrade` budget is not the ceiling.
 
-The same endpoint also accepts `budgets`, `soft_threshold_pct`, `admission`,
-`effort_cap`, `model_cap`, `model_routes`, `api_token`, and `hook_telemetry`.
-**`lil-ccgw` touches only `enforcement` and `bump`** — budget limits and the
-effort/model governors are deliberate-decision surfaces that belong to the
-dashboard and `/gateway:budget`, not a glance-and-click menu.
+## PUT /api/budgets — budget limits
+
+Mutating. **`budgets` replaces the whole array.** There is no per-budget patch
+verb, so a payload carrying only the edited budget deletes every other one.
+Every write must therefore be a read-modify-write:
+
+```
+GET  /api/budgets   → {"budgets": [...]}   the raw config array
+PUT  /api/budgets   ← {"budgets": [...]}   the same array, one field changed
+```
+
+The array read back is not the one in `/api/status`: it carries `limit_usd`
+rather than `effective_limit_usd`, plus `bump_usd`, `bump_expires_at` and a
+`match` on project-scoped budgets. Rebuilding it from `/api/status` would clear
+a live bumper. `GatewayClient.setLimit` therefore patches the raw JSON with
+`JSONSerialization` rather than decoding it — a key this app does not model has
+to survive the round trip.
+
+`validateConfig` refuses `limit_usd <= 0` with a 400. The gateway audit-logs the
+change and records a `budget` event itself.
+
+The same endpoint also accepts `soft_threshold_pct`, `admission`, `effort_cap`,
+`model_cap`, `model_routes`, `api_token`, and `hook_telemetry`.
+**`lil-ccgw` touches only `enforcement`, `bump`, and one budget's `limit_usd`** —
+the effort/model governors change how requests are served rather than how much
+they may cost, and stay with the dashboard and `/gateway:budget`. The limit
+editor is in Settings, never in the panel: it is permanent and it applies to
+every Claude Code request, so it must not be a click away from the menu bar.
 
 ## What the API cannot do
 

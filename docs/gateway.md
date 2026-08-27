@@ -77,7 +77,7 @@ unlogged.
 
 | Path | What |
 |---|---|
-| `~/.ccgw/config.json` | budgets, port, `soft_threshold_pct`, `enforcement` — the app reads these, never sets them |
+| `~/.ccgw/config.json` | budgets, port, `soft_threshold_pct`, `enforcement` — the app reads all of these and writes exactly two: `enforcement` (pause) and one budget's `limit_usd` (Settings → Display) |
 | `~/.ccgw/bin/ccgw` | CLI — **not on `PATH`** |
 | `~/.ccgw/token` | API token, when `api_token: true` |
 | `~/.ccgw/logs/` | launchd stdout/stderr |
