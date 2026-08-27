@@ -231,6 +231,20 @@ func runViewTests() async {
         expectRenders(SettingsView(model: down), "settings with the gateway down")
         expectRenders(DisplayPane(model: down), "display pane with no live data")
 
+        // The limit editor is the one control in Settings that changes what the
+        // gateway enforces, so it must appear exactly when there is a budget to
+        // edit and vanish when there is not.
+        let plainHeight = size(DisplayPane(model: m)).height
+        T.expect(plainHeight > size(DisplayPane(model: down)).height,
+                 "the limit section renders with a tracked budget and not without one")
+
+        // A live bumper adds the line explaining that the field edits the limit
+        // underneath it, rather than the larger number the menu bar is showing.
+        let bumped = await model(status: statusFixtureBumped)
+        expectRenders(DisplayPane(model: bumped), "display pane with a bumped budget")
+        T.expect(size(DisplayPane(model: bumped)).height > plainHeight,
+                 "the bumper caption adds height rather than silently not rendering")
+
         // Every title mode changes the preview row, and every forced tier
         // changes the glyph it previews.
         for mode in TitleMode.allCases {

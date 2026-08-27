@@ -102,6 +102,12 @@ struct DisplayPane: View {
     @AppStorage(DefaultsKey.animateIcon) private var animateIcon = true
     @AppStorage(DefaultsKey.forcedTier) private var forcedTier = ""
 
+    /// The limit field's draft, seeded from the tracked budget and re-seeded
+    /// only when the tracked budget changes. Binding it straight to the model
+    /// would let the poll overwrite the digits mid-edit every few seconds.
+    @State private var limitDraft = ""
+    @State private var limitDraftFor = ""
+
     private var titleMode: TitleMode {
         TitleMode.resolve(titleModeRaw)
     }
@@ -141,6 +147,40 @@ struct DisplayPane: View {
                 Text("Automatic follows whichever budget the gateway nominates as primary — currently \(model.snapshot.status?.primary.map { "\($0.id) · \($0.window)" } ?? "unknown").")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            if let budget = model.trackedBudget {
+                Section("Budget limit") {
+                    HStack {
+                        Text("\(budget.id) · \(budget.window)")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("$")
+                            .foregroundStyle(.secondary)
+                        TextField("", text: $limitDraft)
+                            .frame(width: 90)
+                            .multilineTextAlignment(.trailing)
+                            .monospacedDigit()
+                        Button("Apply") {
+                            guard let value = Derive.parsedLimit(limitDraft) else { return }
+                            Task { await model.setLimit(budgetId: budget.id, limitUsd: value) }
+                        }
+                        .disabled(!Derive.limitApplyEnabled(
+                            draft: limitDraft, current: budget.baseLimitUsd(), isBusy: model.isBusy))
+                    }
+                    Text("The denominator the menu bar renders spend against. This rewrites ~/.ccgw/config.json and applies to every Claude Code request, so it is here rather than a click away in the menu.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if budget.hasActiveBump() {
+                        Text("A bumper of \(Fmt.limit(budget.bumpUsd ?? 0)) is live, so the menu bar currently shows \(Fmt.limit(budget.effectiveLimitUsd)). This field edits the limit underneath it.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .onAppear { seedLimitDraft(budget) }
+                .onChange(of: budget.id) { seedLimitDraft(budget) }
             }
 
             Section("Icon") {
@@ -183,6 +223,15 @@ struct DisplayPane: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// Fills the field from the configured limit, skipping the bumper: the
+    /// field edits `limit_usd`, and prefilling it with limit + bump would make
+    /// Apply silently bake a temporary allowance into the permanent limit.
+    private func seedLimitDraft(_ budget: Budget) {
+        guard limitDraftFor != budget.id else { return }
+        limitDraftFor = budget.id
+        limitDraft = BumpForm.fieldText(budget.baseLimitUsd())
     }
 
     /// Live scene when the gateway is up; a calm one for the sample, so the
