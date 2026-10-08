@@ -14,7 +14,7 @@ import SwiftUI
 /// SwiftUI hosts inside this plain `swiftc` binary with no bundle and no app.
 ///
 /// What rendering cannot reach is anything behind `@State`: the confirmation
-/// dialogs and the joke line only appear once the user has clicked something,
+/// state transitions and the joke line only appear once the user has clicked something,
 /// and a test outside the view cannot set that. Those paths are covered by
 /// testing the decisions they depend on directly — see `PanelDerive` in
 /// `DeriveTests`.
@@ -63,6 +63,8 @@ func runViewTests() async {
         let live = await model()
         T.equal(live.reachability, .live, "the healthy fixture reaches .live")
         expectRenders(PanelView(model: live), "panel when live")
+        let panelSize = size(PanelView(model: live))
+        T.expect(panelSize.height < 620, "scrolling content leaves Quit reachable on a small display")
 
         let paused = await model(status: statusFixturePaused)
         T.equal(paused.reachability, .paused, "the paused fixture reaches .paused")
@@ -74,6 +76,20 @@ func runViewTests() async {
         let down = await model(status: nil, health: nil, spend: nil)
         T.expect(down.isDown, "a failing transport reaches .down")
         expectRenders(PanelView(model: down), "panel when down")
+    }
+
+    T.suite("inline confirmations and billing form fit the dropdown") {
+        for kind in [GatewayConfirmation.stop, .bypass] {
+            let form = GatewayConfirmationForm(kind: kind, onConfirm: {}, onCancel: {}).frame(width: 296)
+            let measured = size(form)
+            T.expect(measured.width <= 296 && measured.height > 60 && measured.height < 200,
+                     "\(kind.action) confirmation fits without a modal")
+        }
+        T.expect(GatewayConfirmation.bypass.message.contains("next start"), "bypass describes when it takes effect")
+        let billing = BillingSyncForm(amount: .constant("123.45"), observedAt: .constant(Date(timeIntervalSince1970: 1791385580)),
+                                      isBusy: false, onSave: { _, _ in }, onCancel: {}).frame(width: 296)
+        let measured = size(billing)
+        T.expect(measured.width <= 296 && measured.height > 80, "billing sync form fits")
     }
 
     await T.suite("the panel renders each budget shape") {

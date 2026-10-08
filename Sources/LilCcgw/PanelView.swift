@@ -13,7 +13,7 @@ struct PanelView: View {
     @AppStorage(PanelSection.models.defaultsKey) private var showModels = true
     @AppStorage(DefaultsKey.pauseMinutes) private var pauseMinutes = 60
 
-    @State private var confirming: Confirmation?
+    @State private var confirming: GatewayConfirmation?
     @State private var syncingBilling = false
     @State private var billingAmount = ""
     @State private var billingObservedAt = Date()
@@ -32,36 +32,47 @@ struct PanelView: View {
     /// correcting a mistyped bumper is an edit rather than a fresh calculation.
     @State private var bumpTarget = ""
 
-    private enum Confirmation: Identifiable {
-        case stop, bypass
-        var id: String {
-            switch self { case .stop: return "stop"; case .bypass: return "bypass" }
-        }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
-            if model.isDown {
-                downNotice
+            if let which = confirming {
+                GatewayConfirmationForm(kind: which, onConfirm: {
+                    confirming = nil
+                    Task {
+                        switch which {
+                        case .stop: await model.stopGateway()
+                        case .bypass: await model.bypass()
+                        }
+                    }
+                }, onCancel: { confirming = nil })
             } else {
-                if showBudgets, let status = model.snapshot.status, !status.budgets.isEmpty {
-                    Divider()
-                    budgets(status)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if model.isDown {
+                            downNotice
+                        } else {
+                            if showBudgets, let status = model.snapshot.status, !status.budgets.isEmpty {
+                                Divider()
+                                budgets(status)
+                            }
+                            if showBurn, let primary = model.snapshot.status?.primary {
+                                Divider()
+                                burn(primary)
+                            }
+                            if showModels, let rows = topModels, !rows.isEmpty {
+                                Divider()
+                                models(rows)
+                            }
+                            Divider()
+                            enforcementRow
+                        }
+                        Divider()
+                        controls
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                if showBurn, let primary = model.snapshot.status?.primary {
-                    Divider()
-                    burn(primary)
-                }
-                if showModels, let rows = topModels, !rows.isEmpty {
-                    Divider()
-                    models(rows)
-                }
-                Divider()
-                enforcementRow
+                .frame(maxHeight: 480)
             }
-            Divider()
-            controls
             Divider()
             footer
         }
@@ -77,45 +88,6 @@ struct PanelView: View {
         // typical burn is enough to disagree visibly with /dash (which polls
         // status every 4s).
         .task { await model.refresh() }
-        .alert(item: $confirming) { which in
-            switch which {
-            case .stop:
-                return Alert(
-                    title: Text("Stop the gateway?"),
-                    message: Text(
-                        """
-                        Claude Code points at this gateway, so every request will \
-                        fail with connection refused until it is started again.
-
-                        Stopping also unloads the launchd agent, so it will not \
-                        come back at login until you press Start.
-                        """
-                    ),
-                    primaryButton: .destructive(Text("Stop")) {
-                        Task { await model.stopGateway() }
-                    },
-                    secondaryButton: .cancel()
-                )
-            case .bypass:
-                return Alert(
-                    title: Text("Bypass the gateway?"),
-                    message: Text(
-                        """
-                        This unwires ANTHROPIC_BASE_URL from settings.json so \
-                        Claude Code talks to the API directly — budgets stop \
-                        being enforced and spend stops being recorded.
-
-                        It takes effect the next time Claude Code starts, not \
-                        immediately.
-                        """
-                    ),
-                    primaryButton: .destructive(Text("Bypass")) {
-                        Task { await model.bypass() }
-                    },
-                    secondaryButton: .cancel()
-                )
-            }
-        }
     }
 
     // MARK: - Sections
@@ -477,7 +449,9 @@ struct PanelView: View {
             Button("Help…") { HelpWindow.present { openWindow(id: "help") } }
                 .keyboardShortcut("?")
             Spacer()
-            Button("Quit") { NSApplication.shared.terminate(nil) }
+            Button("Quit App") { NSApplication.shared.terminate(nil) }
+                .buttonStyle(.bordered)
+                .help("Quit the menu bar app. The gateway keeps running.")
                 .keyboardShortcut("q")
         }
         .buttonStyle(.borderless)
@@ -488,11 +462,44 @@ struct PanelView: View {
 
     private var topModels: [SpendRow]? { PanelDerive.topModels(model.snapshot.spend) }
 
-    private func color(for budget: Budget, softThreshold: Double) -> Color {
-        PanelDerive.budgetColor(budget, softThreshold: softThreshold)
-    }
-
     private func paceColor(_ pace: Double?) -> Color { PanelDerive.paceColor(pace) }
+}
+
+enum GatewayConfirmation {
+    case stop, bypass
+
+    var action: String { self == .stop ? "Stop gateway" : "Bypass gateway" }
+    var message: String {
+        switch self {
+        case .stop:
+            return "Claude Code requests will fail until the gateway is started again. Stopping also unloads its login service."
+        case .bypass:
+            return "Claude Code will connect directly on its next start. The gateway will no longer enforce budgets or record that spend."
+        }
+    }
+}
+
+/// Inline confirmation avoids modal focus traps inside a MenuBarExtra window.
+struct GatewayConfirmationForm: View {
+    let kind: GatewayConfirmation
+    var onConfirm: () -> Void
+    var onCancel: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("\(kind.action)?").fontWeight(.semibold)
+            Text(kind.message).fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button("Cancel", action: onCancel)
+                    .keyboardShortcut(.cancelAction)
+                Button(kind.action, role: .destructive, action: onConfirm)
+            }
+        }
+        .font(.system(size: 11))
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+    }
 }
 
 /// Enter an observed billing total, retaining later local estimates and the ledger.
@@ -748,24 +755,5 @@ enum PanelDerive {
         if pace >= 1.5 { return .red }
         if pace >= 1.0 { return .orange }
         return .green
-    }
-}
-
-/// `alert(item:)` shim — SwiftUI dropped the Identifiable-item overload for
-/// `Alert`, but it keeps the two confirmations declarative here.
-private extension View {
-    func alert<Item: Identifiable>(
-        item: Binding<Item?>,
-        content: @escaping (Item) -> Alert
-    ) -> some View {
-        let isPresented = Binding(
-            get: { item.wrappedValue != nil },
-            set: { if !$0 { item.wrappedValue = nil } }
-        )
-        return background(
-            EmptyView().alert(isPresented: isPresented) {
-                content(item.wrappedValue!)
-            }
-        )
     }
 }
