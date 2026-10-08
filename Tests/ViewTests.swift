@@ -65,6 +65,10 @@ func runViewTests() async {
         expectRenders(PanelView(model: live), "panel when live")
         let panelSize = size(PanelView(model: live))
         T.expect(panelSize.height < 620, "scrolling content leaves Quit reachable on a small display")
+        let controller = NSHostingController(rootView: PanelView(model: live))
+        let compressedSize = controller.sizeThatFits(in: CGSize(width: 320, height: 0))
+        T.expect(compressedSize.height > 400,
+                 "the menu bar's minimum-size proposal keeps the panel content visible (got \(Int(compressedSize.height))pt)")
 
         let paused = await model(status: statusFixturePaused)
         T.equal(paused.reachability, .paused, "the paused fixture reaches .paused")
@@ -76,6 +80,32 @@ func runViewTests() async {
         let down = await model(status: nil, health: nil, spend: nil)
         T.expect(down.isDown, "a failing transport reaches .down")
         expectRenders(PanelView(model: down), "panel when down")
+
+        for (label, state) in [("live", live), ("paused", paused), ("down", down)] {
+            let host = NSHostingController(rootView: PanelView(model: state))
+            let minimum = host.sizeThatFits(in: CGSize(width: 320, height: 0))
+            let expanded = host.sizeThatFits(in: CGSize(width: 320, height: 2_000))
+            T.close(minimum.height, expanded.height,
+                    "\(label) panel retains its content height under compression")
+        }
+    }
+
+    await T.suite("long budget lists stay bounded under compression") {
+        var payload = try JSONSerialization.jsonObject(with: Data(statusFixture.utf8)) as! [String: Any]
+        let template = (payload["budgets"] as! [[String: Any]])[0]
+        payload["budgets"] = (0..<12).map { index in
+            var budget = template
+            budget["id"] = "budget-\(index)"
+            return budget
+        }
+        let json = String(data: try JSONSerialization.data(withJSONObject: payload), encoding: .utf8)!
+        let longList = await model(status: json)
+        let host = NSHostingController(rootView: PanelView(model: longList))
+        for height: CGFloat in [0, 2_000] {
+            let measured = host.sizeThatFits(in: CGSize(width: 320, height: height))
+            T.expect(measured.height > 400 && measured.height < 620,
+                     "long budget list scrolls while the footer stays visible (got \(Int(measured.height))pt)")
+        }
     }
 
     T.suite("inline confirmations and billing form fit the dropdown") {

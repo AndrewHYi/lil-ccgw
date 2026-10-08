@@ -78,6 +78,9 @@ struct PanelView: View {
         }
         .padding(12)
         .frame(width: 320)
+        // MenuBarExtra can propose the minimum height. Keep the content's
+        // ideal height, with the scroll area capped above, instead of collapsing.
+        .fixedSize(horizontal: false, vertical: true)
         .onAppear {
             model.panelIsOpen = true
             joke = model.scene.jokes.randomElement()
