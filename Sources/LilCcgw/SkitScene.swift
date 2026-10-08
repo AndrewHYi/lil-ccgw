@@ -306,7 +306,8 @@ enum BudgetHeat: Equatable {
     /// gateway can set it for reasons of its own.
     static func resolve(status: GatewayStatus?, budget: Budget?) -> BudgetHeat {
         guard let status, let budget else { return .normal }
-        if budget.exhausted { return .exhausted }
+        if status.isPaused { return .normal }
+        if budget.exhausted { return budget.action == "block" ? .exhausted : .soft }
         if budget.soft || budget.pct >= status.softThresholdPct { return .soft }
         return .normal
     }

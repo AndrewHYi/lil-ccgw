@@ -48,9 +48,9 @@ struct HelpView: View {
         ]),
         Section(heading: "Reading the panel", entries: [
             Entry(title: "enforcement",
-                  detail: "on, paused (with a resume time), or degraded — degraded means a budget crossed its soft threshold and requests are being capped to a cheaper effort level rather than blocked outright."),
+                  detail: "on, paused (with a resume time), warning, or effort capped. A warning allows requests unchanged. An effort cap is shown only when the gateway reports an active cap."),
             Entry(title: "Budget rows",
-                  detail: "Spend vs. limit for one configured window, each on its own rolling clock. The bar ambers near the soft threshold and reds out when exhausted."),
+                  detail: "Spend vs. limit for the configured window. A month UTC row resets at the UTC month boundary. Billing baselines include later local estimates. Amber means a warning; red means an exhausted blocking budget with enforcement on."),
             Entry(title: "burn / pace",
                   detail: "Burn is the current spend rate; pace is that rate divided by what's sustainable for the window. Below 1.0× you'll make it to the reset at this rate; above, you won't."),
         ]),

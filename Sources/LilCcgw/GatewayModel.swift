@@ -56,7 +56,7 @@ final class GatewayModel {
     private(set) var spendWindowSeconds: TimeInterval = 86_400
 
     var spendWindowLabel: String {
-        trackedBudget?.window ?? "24h"
+        trackedBudget?.billingSnapshot == nil ? (trackedBudget?.windowLabel ?? "24h") : ""
     }
 
     /// Set by the panel appearing/disappearing so an open panel refreshes
@@ -219,7 +219,7 @@ final class GatewayModel {
         // round trip costs microseconds.
         let window = trackedBudget?.windowSeconds ?? 86_400
         spendWindowSeconds = window
-        if let spend = try? await client.spendByModel(windowSeconds: window) {
+        if let spend = try? await client.spendByModel(windowSeconds: window, from: trackedBudget?.spendFrom()) {
             snapshot.spend = spend
         }
 
@@ -297,6 +297,10 @@ final class GatewayModel {
 
     func clearBump(budgetId: String) async {
         await perform { try await self.client.clearBump(budgetId: budgetId) }
+    }
+
+    func syncBilling(spentUsd: Double, at: Date) async {
+        await perform { try await self.client.syncBilling(spentUsd: spentUsd, at: at) }
     }
 
     /// Sets a bumper to an exact amount, up or down.

@@ -74,8 +74,8 @@ actor GatewayClient {
     /// dashboard's breakdown defaults to 1 day and its widest option is 1 week,
     /// so a hardcoded 30-day window here would read as a discrepancy against
     /// `/dash` the moment any spend ages past a day.
-    func spendByModel(windowSeconds: TimeInterval) async throws -> SpendReport {
-        let from = Int(Date().addingTimeInterval(-windowSeconds).timeIntervalSince1970 * 1000)
+    func spendByModel(windowSeconds: TimeInterval, from start: Date? = nil) async throws -> SpendReport {
+        let from = Int((start ?? Date().addingTimeInterval(-windowSeconds)).timeIntervalSince1970 * 1000)
         return try await get("/api/spend?group_by=model&from=\(from)")
     }
 
@@ -122,6 +122,16 @@ actor GatewayClient {
     func clearBump(budgetId: String) async throws {
         _ = try await send("/api/budgets", method: "PUT",
                            body: ["bump": ["budget_id": budgetId, "clear": true]])
+    }
+
+    /// Reconcile all global UTC-month budgets atomically without replacing their limits or bumpers.
+    func syncBilling(spentUsd: Double, at: Date) async throws {
+        guard spentUsd.isFinite, spentUsd >= 0 else {
+            throw GatewayError.http(400, "billing spend must be a nonnegative amount")
+        }
+        _ = try await send("/api/budgets", method: "PUT", body: [
+            "billing_snapshot": ["at": Int64(at.timeIntervalSince1970 * 1000), "spent_usd": spentUsd]
+        ])
     }
 
     /// Change one budget's configured limit — the denominator the menu bar

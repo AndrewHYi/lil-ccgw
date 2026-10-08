@@ -18,6 +18,8 @@ runSkitTests()
 runDeriveTests()
 runTransportTests()
 runPanelDeriveTests()
+runBillingTests()
+await runBillingModelTests()
 
 // Render tests host real SwiftUI views, so they need the main actor.
 await MainActor.run { runRenderTests() }

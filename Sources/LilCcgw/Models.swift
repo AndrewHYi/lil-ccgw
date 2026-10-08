@@ -17,6 +17,7 @@ struct GatewayStatus: Decodable {
     let softThresholdPct: Double
     let primary: PrimaryBudget?
     let budgets: [Budget]
+    let effort: EffortStatus?
 
     var isPaused: Bool { enforcement == "off" }
 
@@ -24,6 +25,15 @@ struct GatewayStatus: Decodable {
     var resumeDate: Date? {
         enforcementResumeAt.map { Date(timeIntervalSince1970: $0 / 1000) }
     }
+}
+
+struct EffortStatus: Decodable {
+    let effectiveCap: String?
+}
+
+struct BillingSnapshot: Decodable {
+    let at: Double
+    let spentUsd: Double
 }
 
 struct PrimaryBudget: Decodable {
@@ -52,6 +62,10 @@ struct Budget: Decodable, Identifiable {
     let pace: Double?
     let bumpUsd: Double?
     let bumpExpiresAt: Double?
+    let windowStartedAt: Double?
+    let windowEndsAt: Double?
+    let billingSnapshot: BillingSnapshot?
+    let degradeCap: String?
 
     /// 0…1 for progress rendering; pct arrives as 0…100 and can exceed it.
     var fraction: Double { max(0, min(1, pct / 100)) }
@@ -60,6 +74,25 @@ struct Budget: Decodable, Identifiable {
     /// shorthand ("5h", "7d", "30d"). Used to scope the model breakdown to the
     /// same window as the budget it sits under, so the two cannot disagree.
     var windowSeconds: TimeInterval? { Budget.parseWindow(window) }
+
+    var windowLabel: String { window == "month" ? "month UTC" : window }
+
+    /// The baseline is account-wide; only subsequent local estimates can be
+    /// broken down by model. Prefer the gateway's actual window boundaries.
+    func spendFrom(now: Date = Date()) -> Date {
+        if let snapshot = billingSnapshot {
+            return Date(timeIntervalSince1970: (snapshot.at + 1) / 1000)
+        }
+        if let start = windowStartedAt {
+            return Date(timeIntervalSince1970: start / 1000)
+        }
+        if window == "month" {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+            return calendar.dateInterval(of: .month, for: now)!.start
+        }
+        return now.addingTimeInterval(-(windowSeconds ?? 86_400))
+    }
 
     /// Whether a bumper is currently in force. `bump_usd` outlives its expiry in
     /// config, so the timestamp is the authority.
@@ -95,6 +128,12 @@ struct Budget: Decodable, Identifiable {
     }
 
     static func parseWindow(_ text: String) -> TimeInterval? {
+        // Approximate duration is only for ordering and rate labels. Accounting
+        // and model breakdown use the gateway's absolute boundaries above.
+        if text == "month" { return 30.436875 * 86_400 }
+        if text.hasSuffix("mo"), let value = Double(text.dropLast(2)) {
+            return value * 30.436875 * 86_400
+        }
         guard let unit = text.last, let value = Double(text.dropLast()) else { return nil }
         switch unit {
         case "s": return value

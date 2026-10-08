@@ -10,7 +10,23 @@ organisation-internal plugin marketplace (see `docs/gateway.md`). Nothing in thi
 repo compiles against it, so a renamed field produces **no compile error** — just
 `nil` where a number should be, and dashes in the menu. This file is the tripwire.
 
-Verified against gateway **v0.1.52**. Re-verify after a gateway update.
+Verified against gateway **v0.1.67**. Re-verify after a gateway update.
+
+The billing extension in v0.1.67 adds optional `window_started_at`,
+`window_ends_at`, and `billing_snapshot: {at, spent_usd}` fields to each
+budget. Times are epoch milliseconds. `window: "month"` means a UTC calendar
+month; `1mo` remains the gateway's anchored local-calendar window.
+
+With a billing snapshot, `spent_usd` is the observed account total through
+`at`, plus local estimates after it. The snapshot expires at the next UTC
+month boundary. Model breakdowns start at `at + 1` and describe only those
+new estimates. Without a snapshot, use `window_started_at` when provided;
+older gateways fall back to the rolling duration.
+
+The optional `effort.effective_cap` names an active effort cap. `degraded`
+alone does not establish a cap: older gateways also set it for warnings.
+Warning-only budgets over their limit render amber; red means an active
+blocking budget. `health.telemetry_degraded` identifies accounting failures.
 
 ## Rules before endpoints
 
@@ -94,6 +110,14 @@ until `version`/`uptime_s` changes.
 
 Unreachable gateway ⇒ this cannot work. Fall back to
 `launchctl kickstart -k gui/$UID/io.ccgw.gateway`.
+
+## PUT /api/budgets: billing sync
+
+`{"billing_snapshot":{"at":<epoch milliseconds>,"spent_usd":<observed total>}}`
+updates every global `month` budget in one operation. Limits, actions, bumpers,
+and ledger rows are preserved. The observation must be in the current UTC month,
+no later than now, with finite nonnegative spend. Invalid observations return
+400 without changing the saved baseline. Available starting in v0.1.67.
 
 ## PUT /api/budgets — enforcement pause
 

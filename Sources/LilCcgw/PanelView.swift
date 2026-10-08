@@ -14,6 +14,9 @@ struct PanelView: View {
     @AppStorage(DefaultsKey.pauseMinutes) private var pauseMinutes = 60
 
     @State private var confirming: Confirmation?
+    @State private var syncingBilling = false
+    @State private var billingAmount = ""
+    @State private var billingObservedAt = Date()
 
     /// Re-rolled each time the panel opens, which is this app's analogue of the
     /// dashboard re-rolling its tooltip on every hover.
@@ -219,7 +222,7 @@ struct PanelView: View {
                     HStack(spacing: 6) {
                         Text(budget.id)
                             .fontWeight(budget.id == model.trackedBudget?.id ? .semibold : .regular)
-                        Text(budget.window).foregroundStyle(.secondary)
+                        Text(budget.windowLabel).foregroundStyle(.secondary)
                         Spacer()
                         Text("\(Fmt.usd(budget.spentUsd)) / \(Fmt.limit(budget.effectiveLimitUsd))")
                             .monospacedDigit()
@@ -229,9 +232,40 @@ struct PanelView: View {
                             .frame(width: 44, alignment: .trailing)
                     }
                     ProgressView(value: budget.fraction)
-                        .tint(color(for: budget, softThreshold: status.softThresholdPct))
+                        .tint(PanelDerive.budgetColor(budget, softThreshold: status.softThresholdPct,
+                                                     enforcementOn: !status.isPaused))
+
+                    if let note = PanelDerive.budgetNote(budget, enforcementOn: !status.isPaused) {
+                        Text(note).font(.system(size: 9)).foregroundStyle(.secondary)
+                    }
+                    if let baseline = budget.billingSnapshot {
+                        Text("Billing baseline \(Fmt.usd(baseline.spentUsd)) + new local estimates")
+                            .font(.system(size: 9)).foregroundStyle(.secondary)
+                    }
+                    if budget.window == "month", let end = budget.windowEndsAt {
+                        Text("Resets \(Date(timeIntervalSince1970: end / 1000).formatted(date: .abbreviated, time: .shortened))")
+                            .font(.system(size: 9)).foregroundStyle(.secondary)
+                    }
 
                     bumpRow(budget, all: status.budgets)
+                }
+            }
+            if status.budgets.contains(where: { $0.window == "month" && $0.scope == "global" }) {
+                Button("Sync billing…") {
+                    syncingBilling.toggle()
+                    billingObservedAt = Date()
+                    billingAmount = ""
+                }
+                .buttonStyle(.borderless)
+                if syncingBilling {
+                    BillingSyncForm(amount: $billingAmount, observedAt: $billingObservedAt,
+                                    isBusy: model.isBusy,
+                                    onSave: { amount, at in
+                        Task {
+                            await model.syncBilling(spentUsd: amount, at: at)
+                            if model.lastError == nil { syncingBilling = false }
+                        }
+                    }, onCancel: { syncingBilling = false })
                 }
             }
         }
@@ -355,7 +389,8 @@ struct PanelView: View {
     private func models(_ rows: [SpendRow]) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
-                Text("top models").foregroundStyle(.secondary)
+                Text(model.trackedBudget?.billingSnapshot == nil ? "top models" : "local estimates since billing sync")
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Text(model.spendWindowLabel).foregroundStyle(.secondary)
             }
@@ -381,8 +416,8 @@ struct PanelView: View {
                     }
                 } else {
                     Text(status.enforcement)
-                    if status.degraded {
-                        Text("· degraded").foregroundStyle(.orange)
+                    if let note = PanelDerive.enforcementNote(status, health: model.snapshot.health) {
+                        Text("· \(note)").foregroundStyle(.orange)
                     }
                 }
             } else {
@@ -458,6 +493,43 @@ struct PanelView: View {
     }
 
     private func paceColor(_ pace: Double?) -> Color { PanelDerive.paceColor(pace) }
+}
+
+/// Enter an observed billing total, retaining later local estimates and the ledger.
+struct BillingSyncForm: View {
+    @Binding var amount: String
+    @Binding var observedAt: Date
+    let isBusy: Bool
+    var onSave: (Double, Date) -> Void
+    var onCancel: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Copy month-to-date spend from your billing page.")
+            TextField("Spent in USD", text: $amount)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityLabel("Billing spend in USD")
+            DatePicker("Observed", selection: $observedAt, displayedComponents: [.date, .hourAndMinute])
+            Text("Later local estimates are added. This does not connect to your billing account.")
+                .font(.system(size: 10)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button("Save total") {
+                    if let value = Double(amount) { onSave(value, observedAt) }
+                }
+                .disabled(isBusy || !Self.validAmount(amount))
+                Button("Cancel", action: onCancel)
+            }
+        }
+        .font(.system(size: 11))
+        .padding(8)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    static func validAmount(_ text: String) -> Bool {
+        guard let value = Double(text) else { return false }
+        return value.isFinite && value >= 0
+    }
 }
 
 /// The bumper form, lifted out of `PanelView` so its layout can be asserted.
@@ -647,10 +719,26 @@ enum PanelDerive {
 
     /// Bar colour for one budget. The gateway owns the soft threshold, so it is
     /// passed in rather than assumed to be 80.
-    static func budgetColor(_ budget: Budget, softThreshold: Double) -> Color {
-        if budget.exhausted { return .red }
+    static func budgetColor(_ budget: Budget, softThreshold: Double, enforcementOn: Bool = true) -> Color {
+        if budget.exhausted { return budget.action == "block" && enforcementOn ? .red : .orange }
         if budget.soft || budget.pct >= softThreshold { return .orange }
         return .accentColor
+    }
+
+    static func budgetNote(_ budget: Budget, enforcementOn: Bool) -> String? {
+        if !enforcementOn { return budget.exhausted ? "over limit; enforcement paused" : nil }
+        if budget.action == "degrade", let cap = budget.degradeCap { return "effort capped: \(cap)" }
+        guard budget.exhausted else { return nil }
+        return budget.action == "block" ? "requests blocked" : "warning only"
+    }
+
+    static func enforcementNote(_ status: GatewayStatus, health: GatewayHealth?) -> String? {
+        if status.isPaused { return nil }
+        if health?.telemetryDegraded == true { return "telemetry issue" }
+        if let cap = status.effort?.effectiveCap { return "effort capped: \(cap)" }
+        if status.budgets.contains(where: { $0.exhausted && $0.action == "warn" }) { return "warning" }
+        // Old gateways use degraded for warnings too. Never infer a throttle.
+        return status.degraded ? "warning" : nil
     }
 
     /// Matches the dashboard's green/amber/red pace treatment so the two
