@@ -282,37 +282,28 @@ suite runs with the gateway stopped and produces identical results.
 
 ## Comparing against Anthropic's usage page
 
-The menu bar tracks a **5-hour rolling window** by default, so it will not match
-the month-to-date figure on Anthropic's usage page. Those are different
-questions, and the answers are meant to differ:
+The gateway's local request estimates can differ from your account's billed
+usage. The menu bar follows the primary budget, usually a five-hour window.
+Compare a calendar-month row with month-to-date billing.
 
-```
-menu bar   $41.62/$75 5h      last 5 hours
-Anthropic  $57.74 of $1,200   month to date, resets Aug 31
-```
+Gateways with billing reconciliation support can use a UTC calendar month and
+an observed billing baseline. The row shows that baseline plus new local
+estimates, and the next reset in your local time. The baseline expires at the
+next UTC month boundary. Use **Sync billing…** below the budgets to enter the
+billing page's total and the time you observed it. This is a manual
+reconciliation; future estimates can still drift from billed usage.
 
-Compare the **monthly 30d** row in the panel instead. Two reasons it still won't
-match exactly, both expected:
+When tracking a reconciled budget, the model breakdown is labelled **local
+estimates since billing sync**. The account-wide baseline cannot be allocated
+to individual models, so it is excluded from that breakdown.
 
-- **Spend from before the proxy existed is invisible to ccgw.** It only sees what
-  it proxied. Requests you sent before wiring `ANTHROPIC_BASE_URL` went straight
-  to the API and are absent from the ledger. Find when capture began with
-  `sqlite3 -readonly ~/.ccgw/ledger.db "SELECT datetime(MIN(ts)/1000,'unixepoch') FROM requests;"`.
-  The distortion ages out of the 5h window within hours and out of 30d within a
-  month.
-- **ccgw prices at published API list rates**, which its README documents
-  deliberately. If your plan bills at negotiated rates, ccgw runs a few percent
-  high on the traffic it did capture.
+Warning-only budgets render amber when over their limits. Red indicates an
+exhausted blocking budget with enforcement enabled. The footer says **warning**
+for warnings and **effort capped** only when a cap is active.
 
-Those two pull in opposite directions and largely cancel. On this machine a
-$6-ish missing window against a ~7% overcount left the monthly figures about 4%
-apart. Treat a few percent as the measurement model, and a large or growing gap
-as worth investigating.
-
-If you want the bar comparable to the usage page, set Track budget to
-`monthly · 30d` in Settings → Display, or pick Statusline to see both. The 5h
-window is the default because it's what catches a runaway early — a monthly
-number at 5% used hides a burn rate of 1.5× sustainable.
+Quit App stays visible at the bottom of the dropdown while the budget list
+scrolls. Stop and Bypass use inline confirmations with an explicit Cancel action;
+quitting the menu bar app leaves the gateway running.
 
 ## Comparing against the dashboard
 
