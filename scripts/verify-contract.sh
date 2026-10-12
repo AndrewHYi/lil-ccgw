@@ -33,6 +33,11 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# The decode probe compiles every app source, SwiftUI included.
+# shellcheck source=scripts/toolchain.sh
+source "$REPO_ROOT/scripts/toolchain.sh"
+lil_ccgw_select_sdk
+
 # The contract is explicit: 127.0.0.1, never localhost. The gateway validates the
 # Host header against loopback names to defeat DNS rebinding, and localhost can
 # resolve to an IPv6 literal it rejects.
