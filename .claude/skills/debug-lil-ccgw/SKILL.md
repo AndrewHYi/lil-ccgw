@@ -141,6 +141,21 @@ binary from `dist/` hits that path.
 SwiftPM is broken on Command Line Tools-only hosts. There is no `Package.swift`
 here on purpose; use `scripts/build.sh`. See `testing-lil-ccgw`.
 
+**The build or the tests fail with `plugin for module 'SwiftUIMacros' not found`, then dozens of `'self' is immutable` errors.**
+The macOS 27 SDK declares SwiftUI's `@State` as a macro, and the Command Line Tools
+ship no plugin to expand it. The `'self' is immutable` errors are fallout that name
+closures rather than the cause, so read the first error, not the last. The Tools
+still carry the 26.x SDKs, where `@State` is an ordinary property wrapper, and
+`scripts/toolchain.sh` (sourced by `build.sh` and `test.sh`) probes the default SDK
+and falls back to the newest one that compiles. To pin one by hand:
+
+```sh
+SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk scripts/test.sh
+```
+
+Xcode's own copy of the plugin is not a substitute: it belongs to Xcode's compiler
+generation, not the Tools'.
+
 **Every `brew` subcommand crashes with a JSON gem error after running `brew audit`.**
 `brew audit` installs gems into Homebrew's vendored bundle, and a `json` gem there
 shadows portable-ruby's stdlib version, breaking `brew` itself. Remove just the

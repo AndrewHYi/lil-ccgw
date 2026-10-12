@@ -19,6 +19,10 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# shellcheck source=scripts/toolchain.sh
+source "$REPO_ROOT/scripts/toolchain.sh"
+lil_ccgw_select_sdk
+
 APP_NAME="lil-ccgw"
 BUNDLE_ID="com.andrewhyi.lil-ccgw"
 MIN_MACOS="14.0"

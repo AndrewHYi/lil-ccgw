@@ -86,6 +86,10 @@ open dist/lil-ccgw.app
 arm64-only bundle installs fine on an Intel Mac and then cannot exec.
 `--allow-single-arch` overrides that for local builds only; never for a release.
 
+On a host whose default SDK is macOS 27, `@State` is a macro the Command Line Tools
+cannot expand. `build.sh` and `test.sh` source `scripts/toolchain.sh`, which falls
+back to a 26.x SDK; see `debug-lil-ccgw` if a compile dumps `SwiftUIMacros` errors.
+
 `scripts/verify-cask.sh` installs the cask end to end inside a throwaway
 Homebrew prefix, so it never touches the real `/Applications`, Caskroom, or
 preferences. Run it before any release. Its header records two non-obvious

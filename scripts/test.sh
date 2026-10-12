@@ -24,6 +24,10 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# shellcheck source=scripts/toolchain.sh
+source "$REPO_ROOT/scripts/toolchain.sh"
+lil_ccgw_select_sdk
+
 FLOORS="$REPO_ROOT/scripts/coverage-floors.txt"
 
 COVERAGE=0
