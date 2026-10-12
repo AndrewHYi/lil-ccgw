@@ -84,15 +84,17 @@ with the reason in the message text. ccgw also refuses any request whose `Host`
 header isn't a loopback name, which stops a web page in your browser from driving
 your gateway.
 
-## Three endpoints
+## Four endpoints
 
-Every refresh hits the same three reads. That's the whole data layer.
+Every refresh hits the same three reads, and a fourth every ten minutes. That's
+the whole data layer.
 
 | Endpoint | Gives us | Used for |
 |---|---|---|
 | `GET /api/status` | every budget's spend, limit, percentage; burn rate; pace; whether enforcement is on | almost everything |
 | `GET /api/health` | version, uptime | the header, and "is it alive" |
 | `GET /api/spend?group_by=model` | cost per model | the top-models list |
+| `GET /api/pricing` (every 10 minutes) | which model ids have a rate, and which models were priced | the amber "No exact rate" line, never to price anything |
 
 `/api/status` does most of the work. It arrives as JSON and decodes into plain
 Swift structs in `Models.swift` — no database, no cache, no local state.

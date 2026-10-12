@@ -50,7 +50,7 @@ struct HelpView: View {
             Entry(title: "enforcement",
                   detail: "on, paused (with a resume time), warning, or effort capped. A warning allows requests unchanged. An effort cap is shown only when the gateway reports an active cap."),
             Entry(title: "Budget rows",
-                  detail: "Spend vs. limit for the configured window. A month UTC row resets at the UTC month boundary. Billing baselines include later local estimates. Amber means a warning; red means an exhausted blocking budget with enforcement on."),
+                  detail: "Spend vs. limit for the configured window. A month UTC row resets at the UTC month boundary. Billing baselines include later local estimates. Amber means a warning; red means an exhausted blocking budget with enforcement on. An orange line above the rows means the gateway has no exact rate for a model it has seen, so it is guessing at the price and every estimate below may be off."),
             Entry(title: "burn / pace",
                   detail: "Burn is the current spend rate; pace is that rate divided by what's sustainable for the window. Below 1.0× you'll make it to the reset at this rate; above, you won't."),
         ]),

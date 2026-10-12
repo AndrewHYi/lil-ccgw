@@ -107,7 +107,10 @@ FROM="$(python3 -c 'import time; print(int((time.time() - 18000) * 1000))')"
 curl -sf -m 5 "$BASE/api/spend?group_by=model&from=$FROM" -o "$WORK/spend.json" \
   && pass "GET /api/spend" || fail "GET /api/spend"
 
-[[ "$FAILURES" -eq 0 ]] || { echo "==> cannot continue without all three payloads" >&2; exit 1; }
+curl -sf -m 5 "$BASE/api/pricing" -o "$WORK/pricing.json" \
+  && pass "GET /api/pricing" || fail "GET /api/pricing"
+
+[[ "$FAILURES" -eq 0 ]] || { echo "==> cannot continue without all four payloads" >&2; exit 1; }
 
 # ---------------------------------------------------------------------------
 echo "==> 3. structural check — every consumed field, with its type"
@@ -119,6 +122,7 @@ work = sys.argv[1]
 status = json.load(open(os.path.join(work, "status.json")))
 health = json.load(open(os.path.join(work, "health.json")))
 spend = json.load(open(os.path.join(work, "spend.json")))
+pricing = json.load(open(os.path.join(work, "pricing.json")))
 
 problems = []
 NUM = (int, float)
@@ -203,6 +207,23 @@ for i, r in enumerate(spend.get("rows", [])):
                   "cache_read_tokens", "cache_write_tokens"):
         check(r, field, int, where)
 
+# --- /api/pricing ----------------------------------------------------------
+# The app reads only which model ids have a rate and which models were priced,
+# so that is all this checks. `seen` is optional in Models.swift for older
+# gateways, which makes its absence invisible there: a gateway that dropped it
+# would silently switch the pricing note off.
+check(pricing, "rates", dict, "pricing")
+for key, rate in pricing.get("rates", {}).items():
+    if not isinstance(rate, dict):
+        problems.append(f"pricing.rates[{key}]: expected an object of rates")
+check(pricing, "seen", list, "pricing")
+for i, s in enumerate(pricing.get("seen", [])):
+    where = f"pricing.seen[{i}]"
+    check(s, "model", str, where)
+    check(s, "requests", int, where)
+    check(s, "cost_usd", NUM, where)
+    check(s, "last_ts", NUM, where)
+
 if problems:
     for p in problems:
         print(f"  \033[31m✗\033[0m {p}")
@@ -210,7 +231,8 @@ if problems:
 
 print("  \033[32m✓\033[0m every documented field present with the expected type")
 print(f"      {len(status.get('budgets', []))} budget(s), "
-      f"{len(spend.get('rows', []))} spend row(s)")
+      f"{len(spend.get('rows', []))} spend row(s), "
+      f"{len(pricing.get('rates', {}))} priced model(s)")
 PY
 
 # ---------------------------------------------------------------------------
@@ -298,6 +320,24 @@ do {
     }
 } catch {
     failures.append("/api/spend failed to decode: \(error)")
+}
+
+// PricingReport. The table's health is not part of the contract, so a model
+// without an exact rate is reported, not failed: the app shows the same note.
+do {
+    let pricing = try decoder().decode(PricingReport.self, from: load("pricing.json"))
+    print("  ✓ /api/pricing decodes: \(pricing.rates.count) rates, \(pricing.seen?.count ?? 0) models seen")
+    if pricing.rates.isEmpty {
+        failures.append("pricing.rates is empty; every model would look unpriced")
+    }
+    if pricing.seen == nil {
+        failures.append("pricing.seen is absent; the app's pricing note would never appear")
+    }
+    for finding in PricingAudit.findings(pricing) {
+        print("  ! no exact rate for \(finding.model) (priced as \(finding.pricedAs ?? "the highest known rate")); estimates may be off")
+    }
+} catch {
+    failures.append("/api/pricing failed to decode: \(error)")
 }
 
 if failures.isEmpty {

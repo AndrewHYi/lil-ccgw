@@ -185,6 +185,33 @@ struct SpendRow: Decodable, Identifiable {
     }
 }
 
+// MARK: - GET /api/pricing
+
+/// The gateway's rate table, reduced to what this app reads: which model ids it
+/// has a rate for, and which models it has actually priced. The rates themselves
+/// stay unmodelled because this app never prices anything. It only notices when
+/// the gateway had to guess, and that is a property of the keys.
+///
+/// Decoding runs with `.convertFromSnakeCase`, which rewrites the keys of a
+/// `[String: _]` too. Model ids use hyphens, so they pass through untouched.
+struct PricingReport: Decodable {
+    let version: String?
+    let rates: [String: PricingRate]
+    /// Absent on gateways that predate it.
+    let seen: [SeenModel]?
+}
+
+/// Present only so the table's keys can be decoded without modelling a rate.
+struct PricingRate: Decodable {}
+
+struct SeenModel: Decodable {
+    let model: String
+    let requests: Int
+    let costUsd: Double
+    /// Epoch milliseconds.
+    let lastTs: Double
+}
+
 // MARK: - Composite snapshot
 
 /// One coherent read of the gateway. `nil` fields mean that endpoint failed

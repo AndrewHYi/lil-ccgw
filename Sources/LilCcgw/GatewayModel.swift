@@ -59,6 +59,17 @@ final class GatewayModel {
         trackedBudget?.billingSnapshot == nil ? (trackedBudget?.windowLabel ?? "24h") : ""
     }
 
+    /// Models the gateway has priced without an exact rate of their own. Empty
+    /// when the table is complete, when the check has not run yet, and when the
+    /// gateway has no `/api/pricing` to ask.
+    private(set) var pricingFindings: [PricingFinding] = []
+
+    /// How often to re-read the rate table. It changes when the gateway is
+    /// updated rather than with the clock, so asking on every poll would be
+    /// noise. A `var` so a test can make the next refresh ask.
+    var pricingRefreshInterval: TimeInterval = 600
+    private var pricingCheckedAt: Date?
+
     /// Set by the panel appearing/disappearing so an open panel refreshes
     /// briskly while a closed one stays cheap.
     var panelIsOpen = false {
@@ -222,6 +233,7 @@ final class GatewayModel {
         if let spend = try? await client.spendByModel(windowSeconds: window, from: trackedBudget?.spendFrom()) {
             snapshot.spend = spend
         }
+        if status != nil { await refreshPricingIfDue() }
 
         lastUpdated = Date()
         lastError = (status == nil && health == nil) ? "Gateway not responding" : nil
@@ -238,6 +250,18 @@ final class GatewayModel {
             Notifier.post(title: post.title, body: post.body)
         }
         advanceScene()
+    }
+
+    /// Re-reads the rate table if it is due. Failure keeps the last findings: one
+    /// dropped poll must not make a known problem disappear from the panel.
+    private func refreshPricingIfDue() async {
+        let now = Date()
+        if let checked = pricingCheckedAt, now.timeIntervalSince(checked) < pricingRefreshInterval { return }
+        // Stamped before the request so a gateway without the endpoint is asked
+        // once per interval, not on every poll.
+        pricingCheckedAt = now
+        guard let report = try? await client.pricing() else { return }
+        pricingFindings = PricingAudit.findings(report, now: now)
     }
 
     /// Persists the meltdown clock and starts or stops the frame timer.

@@ -192,6 +192,13 @@ struct PanelView: View {
 
     private func budgets(_ status: GatewayStatus) -> some View {
         VStack(alignment: .leading, spacing: 6) {
+            // Above the rows because it qualifies every figure below it.
+            if let note = PanelDerive.pricingNote(model.pricingFindings) {
+                Text(note)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             ForEach(status.budgets) { budget in
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
@@ -740,6 +747,23 @@ enum PanelDerive {
         if budget.action == "degrade", let cap = budget.degradeCap { return "effort capped: \(cap)" }
         guard budget.exhausted else { return nil }
         return budget.action == "block" ? "requests blocked" : "warning only"
+    }
+
+    /// One short line for when the gateway is guessing at a price, or nil when it
+    /// is not. Several models collapse to a count and the costliest name: this is
+    /// a nudge to go and fix the table, not a report.
+    static func pricingNote(_ findings: [PricingFinding]) -> String? {
+        guard let first = findings.first else { return nil }
+        if findings.count > 1 {
+            return "No exact rate for \(findings.count) models, starting with \(first.model), "
+                + "so estimates may be off."
+        }
+        if let family = first.pricedAs {
+            return "No exact rate for \(first.model), so it is priced as \(family) "
+                + "and estimates may be off."
+        }
+        return "No rate for \(first.model), so it is priced at the highest known rate "
+            + "and estimates run high."
     }
 
     static func enforcementNote(_ status: GatewayStatus, health: GatewayHealth?) -> String? {

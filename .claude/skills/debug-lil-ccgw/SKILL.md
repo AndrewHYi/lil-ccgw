@@ -73,14 +73,53 @@ In order of likelihood:
 4. **A renamed field.** Then it's genuinely broken — check `ccgw-api-contract`.
 
 **ccgw's monthly total doesn't match Anthropic's usage page.**
-Two effects that partly cancel, both expected:
-- ccgw only sees what it proxied. Spend from before `ANTHROPIC_BASE_URL` was wired
-  is absent. Find when capture began:
+Check the rate table before anything else. It is maintained out of band and matched
+by longest prefix, so a model that ships before the table is updated is not an
+error: `claude-opus-5-5` quietly inherits `claude-opus-5`'s rates, and a model with
+no relative is priced at the highest rate the table holds. In October 2026 that left
+the ledger **87% above** the billing page (the 5.5 models had cheaper published
+rates than their predecessors, cache reads most of all) and pushed the configured
+limits up to compensate, until no number meant what it said. The panel shows an
+orange "No exact rate for ..." line while this is happening, and
+`scripts/verify-contract.sh` prints it. By hand:
+
+```sh
+curl -s 127.0.0.1:8484/api/pricing | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+for s in d["seen"]:
+    if s["model"] not in d["rates"]: print(s["model"], s["requests"], s["cost_usd"])'
+```
+
+A model listed there is priced by guesswork (a dated build of a listed model is
+fine). Published rates are at platform.claude.com/docs/en/about-claude/pricing. The
+installed table is `~/.ccgw/bin/dist/src/pricing.json`, read once at startup, so a
+correction needs `~/.ccgw/bin/ccgw restart`. Stored `cost_usd` values are not
+recomputed: rows written under the old table keep the old estimate until repriced.
+
+Two smaller effects remain with a correct table, pulling in opposite directions:
+- ccgw only sees what it proxied. Spend from before `ANTHROPIC_BASE_URL` was wired,
+  and everything on Chat or Cowork, is absent. Find when capture began:
   `sqlite3 -readonly ~/.ccgw/ledger.db "SELECT datetime(MIN(ts)/1000,'unixepoch') FROM requests;"`
-- ccgw prices at published API list rates by design, so it runs a few percent high
-  on negotiated plans.
+- Anything priced differently from the list (fast mode, US-only inference at 1.1x, a
+  negotiated rate) is invisible to the gateway.
 
 A few percent is the measurement model. A large or growing gap is worth digging into.
+
+**Whose number is right, ccgw's or the usage page's?**
+Anthropic reports its own account utilization on every API response, and Claude Code
+surfaces it. One tiny request shows it, for about a cent:
+
+```sh
+claude -p "Reply with OK" --model haiku --output-format stream-json --verbose \
+  --no-session-persistence | grep rate_limit_event
+```
+
+At 76% of the spend limit it printed `"rateLimitType":"overage"`,
+`"utilization":0.76` and `"resetsAt"` set to the UTC month boundary. `utilization` is a
+fraction of the limit to two decimals, so it is good to about 1% of the limit: coarser
+than the usage page, but independent of every price this app or the gateway assumes.
+Whether the event appears below the first warning threshold is unverified.
 
 **High CPU while idle.**
 Icon animation. Measured: ~10% of a core at `melt` (0.18s frames), ~7% at `crit`,

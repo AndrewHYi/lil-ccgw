@@ -25,17 +25,18 @@
 # LilCcgwApp.swift is absent entirely: test.sh excludes it because its
 # @main collides with Tests/main.swift, so it carries no coverage mapping.
 GatewayClient.swift 100.00
-GatewayModel.swift 95.15
+GatewayModel.swift 95.56
 HelpView.swift 100.00
 HelpWindow.swift 94.74
 MenuBarLabel.swift 97.90
-Models.swift 95.65
+Models.swift 98.90
 Notifier.swift 48.84
-PanelView.swift 72.01
+PanelView.swift 88.36
+PricingAudit.swift 100.00
 ServiceControl.swift 96.34
 Settings.swift 98.94
-SettingsView.swift 91.93
+SettingsView.swift 92.13
 SettingsWindow.swift 90.91
 SkitScene.swift 100.00
 Transport.swift 65.91
-TOTAL 86.32
+TOTAL 91.92

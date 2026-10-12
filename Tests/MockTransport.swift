@@ -46,13 +46,14 @@ final class MockTransport: Transport, @unchecked Sendable {
         return self
     }
 
-    /// The healthy default: all three read endpoints stubbed from live-captured
+    /// The healthy default: every read endpoint stubbed from live-captured
     /// fixtures, and mutations accepted.
     static func healthy() -> MockTransport {
         let m = MockTransport()
         m.stub("/api/status", json: statusFixture)
         m.stub("/api/health", json: healthFixture)
         m.stub("/api/spend", json: spendFixture)
+        m.stub("/api/pricing", json: pricingFixture)
         m.stub("/api/restart", json: #"{"restarting":true}"#)
         m.stub("/api/budgets", json: budgetsConfigFixture)
         return m

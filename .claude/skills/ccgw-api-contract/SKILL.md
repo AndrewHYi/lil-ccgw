@@ -99,6 +99,32 @@ group_by string · rows[]{ key, requests, input_tokens, output_tokens,
 `key` is a raw model id (`claude-haiku-4-5-20251001`). `SpendRow.shortName`
 trims the `claude-` prefix and a trailing 8-digit date stamp.
 
+## GET /api/pricing
+
+```
+version string · rates{ <model id>: {input, output, cache_write_5m,
+                        cache_write_1h, cache_read} }
+seen[]{ model, requests, cost_usd, last_ts }          last_ts is epoch ms
+```
+
+The app reads only the **keys** of `rates` and the `seen` list. It never prices
+anything; it notices when the gateway had to guess. The gateway matches a model to
+the table by exact id, then longest prefix, and a model with no relative at all is
+priced at the most expensive rate it knows (flagged `unknown_model` in the ledger).
+So a model that ships before the table is updated is not an error: `claude-opus-5-5`
+quietly inherits `claude-opus-5`'s rates, and every figure downstream is wrong with
+nothing to say so. In October 2026 that left the ledger 87% above the billing page.
+
+`PricingAudit` flags a `seen` model (active in the last 35 days) whose id is not a
+key and whose prefix match leaves a remainder that is not a date stamp (`-20251001`)
+or `-latest`. A dated build of a known model is fine; `-5` after `claude-opus-5` is a
+different model. `seen` is optional in `Models.swift` for gateways that predate it,
+which makes its absence invisible there, so `verify-contract.sh` fails when it
+disappears.
+
+The rates are not decoded: a change to their shape cannot break the note. The table
+is read once at gateway startup, so correcting `pricing.json` needs a restart.
+
 ## POST /api/restart — graceful restart
 
 Mutating. Drains in-flight requests, then exits. The gateway detects supervision
@@ -227,7 +253,6 @@ channel.
 | Endpoint | Why not |
 |---|---|
 | `/api/sessions`, `/api/context`, `/api/requests` | per-session and context detail is dashboard-grade; too much for a menu |
-| `/api/pricing` | rate table is reference material, not a live metric |
 | `/api/annotate` | writes user annotations; no menu affordance for it |
 | `/api/update-check`, `/api/update` | updates go through `gateway-update`, which also rebuilds the binary |
 | `effort_cap` / `model_cap` / `model_routes` | governors change how requests are served, not just when — a deliberate decision, not a menu click |

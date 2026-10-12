@@ -79,6 +79,12 @@ actor GatewayClient {
         return try await get("/api/spend?group_by=model&from=\(from)")
     }
 
+    /// The rate table and the models it has priced. Read to notice when the
+    /// gateway is guessing at a price, never to price anything here.
+    func pricing() async throws -> PricingReport {
+        try await get("/api/pricing")
+    }
+
     // MARK: - Mutations
 
     /// Graceful restart: the gateway drains in-flight requests, then exits. It

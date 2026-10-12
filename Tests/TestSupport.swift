@@ -510,3 +510,38 @@ let spendFixture = """
   ]
 }
 """
+
+/// `GET /api/pricing`, shaped like a live gateway's (v0.1.67) after its table was
+/// corrected to the 2026-10-12 published rates, trimmed to the entries that matter.
+/// The `seen` figures are round numbers; only which models appear is meaningful.
+///
+/// Every model in `seen` resolves exactly or as a dated build, so this is the
+/// healthy case: nothing for the pricing audit to flag. `claude-opus-5-5` and
+/// `claude-haiku-5-5` are the entries the older 2026-08-04 table was missing.
+let pricingFixture = """
+{
+  "version": "2026-10-12", "unit": "per_million_tokens",
+  "rates": {
+    "claude-fable-5": {"input":10,"output":50,"cache_write_5m":12.5,"cache_write_1h":20,"cache_read":1},
+    "claude-fable-5-1": {"input":10,"output":50,"cache_write_5m":12.5,"cache_write_1h":20,"cache_read":0.25},
+    "claude-opus-5": {"input":5,"output":25,"cache_write_5m":6.25,"cache_write_1h":10,"cache_read":0.5},
+    "claude-opus-5-5": {"input":4,"output":20,"cache_write_5m":5,"cache_write_1h":8,"cache_read":0.2},
+    "claude-opus-4-7": {"input":5,"output":25,"cache_write_5m":6.25,"cache_write_1h":10,"cache_read":0.5},
+    "claude-sonnet-5": {"input":2,"output":10,"cache_write_5m":2.5,"cache_write_1h":4,"cache_read":0.2},
+    "claude-sonnet-5-5": {"input":2,"output":10,"cache_write_5m":2.5,"cache_write_1h":4,"cache_read":0.1},
+    "claude-haiku-4-5": {"input":1,"output":5,"cache_write_5m":1.25,"cache_write_1h":2,"cache_read":0.1},
+    "claude-haiku-5-5": {"input":0.5,"output":2.5,"cache_write_5m":0.625,"cache_write_1h":1,"cache_read":0.05}
+  },
+  "seen": [
+    {"model":"claude-opus-5","requests":1100,"cost_usd":480,"last_ts":1789000000000},
+    {"model":"claude-opus-5-5","requests":900,"cost_usd":500,"last_ts":1790000000000},
+    {"model":"claude-sonnet-5-5","requests":300,"cost_usd":120,"last_ts":1790000000000},
+    {"model":"claude-sonnet-5","requests":290,"cost_usd":100,"last_ts":1789500000000},
+    {"model":"claude-fable-5-1","requests":30,"cost_usd":50,"last_ts":1788000000000},
+    {"model":"claude-opus-4-7","requests":360,"cost_usd":60,"last_ts":1787000000000},
+    {"model":"claude-fable-5","requests":40,"cost_usd":10,"last_ts":1787100000000},
+    {"model":"claude-haiku-4-5-20251001","requests":170,"cost_usd":1.5,"last_ts":1789600000000},
+    {"model":"claude-haiku-5-5","requests":20,"cost_usd":0.5,"last_ts":1790000000000}
+  ]
+}
+"""
