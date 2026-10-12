@@ -289,9 +289,30 @@ Compare a calendar-month row with month-to-date billing.
 Gateways with billing reconciliation support can use a UTC calendar month and
 an observed billing baseline. The row shows that baseline plus new local
 estimates, and the next reset in your local time. The baseline expires at the
-next UTC month boundary. Use **Sync billing…** below the budgets to enter the
-billing page's total and the time you observed it. This is a manual
-reconciliation; future estimates can still drift from billed usage.
+next UTC month boundary. Use **Sync billing…** below the budgets and paste the
+usage line exactly as the page prints it (`$412.80 of $1,000.00 spent`), with the
+time you observed it. This is a manual reconciliation; future estimates can still
+drift from billed usage.
+
+Three things keep that honest:
+
+- The baseline line says how old it is, and turns amber after a day.
+- Before you save, the form compares the figure with the gateway's own estimate
+  ("ccgw's estimate is 33% above this") and, if the pasted limit is not the one
+  the gateway enforces, says so and points at Settings. A gap over 15% usually
+  means the rate table is stale.
+- An orange line above the budgets appears when the gateway has priced a model
+  without a rate of its own (see below). That is the usual cause of a large gap.
+
+### Why the estimate can run far from the bill
+
+The gateway prices every request from a rate table maintained out of band, and
+matches a model to it by longest prefix. A model that ships before the table is
+updated is not an error: `claude-opus-5-5` quietly inherits `claude-opus-5`'s
+rates, and a model with no relative is priced at the highest rate the table holds.
+In October 2026 that left the ledger 87% above the billing page. Correcting the
+table needs a gateway restart, and rows already written keep their old estimate
+until repriced. `debug-lil-ccgw` has the diagnosis and the fix.
 
 When tracking a reconciled budget, the model breakdown is labelled **local
 estimates since billing sync**. The account-wide baseline cannot be allocated

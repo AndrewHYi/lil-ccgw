@@ -221,8 +221,11 @@ struct PanelView: View {
                         Text(note).font(.system(size: 9)).foregroundStyle(.secondary)
                     }
                     if let baseline = budget.billingSnapshot {
-                        Text("Billing baseline \(Fmt.usd(baseline.spentUsd)) + new local estimates")
-                            .font(.system(size: 9)).foregroundStyle(.secondary)
+                        let note = PanelDerive.baselineNote(baseline)
+                        Text(note.text)
+                            .font(.system(size: 9))
+                            .foregroundStyle(note.stale ? Color.orange : Color.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     if budget.window == "month", let end = budget.windowEndsAt {
                         Text("Resets \(Date(timeIntervalSince1970: end / 1000).formatted(date: .abbreviated, time: .shortened))")
@@ -240,8 +243,10 @@ struct PanelView: View {
                 }
                 .buttonStyle(.borderless)
                 if syncingBilling {
+                    let ceiling = Derive.billingBudget(status.budgets)
                     BillingSyncForm(amount: $billingAmount, observedAt: $billingObservedAt,
                                     isBusy: model.isBusy,
+                                    monthLimit: ceiling?.baseLimitUsd(), estimate: ceiling?.spentUsd,
                                     onSave: { amount, at in
                         Task {
                             await model.syncBilling(spentUsd: amount, at: at)
@@ -517,24 +522,43 @@ struct BillingSyncForm: View {
     @Binding var amount: String
     @Binding var observedAt: Date
     let isBusy: Bool
+    /// The month budget's configured limit and the gateway's running estimate, so
+    /// the form can say how far a pasted figure is from them. Optional: the form
+    /// is still usable with nothing to compare against.
+    var monthLimit: Double?
+    var estimate: Double?
     var onSave: (Double, Date) -> Void
     var onCancel: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Copy month-to-date spend from your billing page.")
+        let parsed = Derive.parsedBilling(amount)
+        let preview = parsed.map {
+            Derive.billingPreview($0, observedAt: observedAt, now: Date(),
+                                  monthLimit: monthLimit, estimate: estimate)
+        }
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("Paste the usage line from your billing page, such as $412.80 of $1,000.00 spent.")
+                .fixedSize(horizontal: false, vertical: true)
             TextField("Spent in USD", text: $amount)
                 .textFieldStyle(.roundedBorder)
                 .accessibilityLabel("Billing spend in USD")
             DatePicker("Observed", selection: $observedAt, displayedComponents: [.date, .hourAndMinute])
+            if let note = preview?.estimateNote {
+                Text(note).font(.system(size: 10)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let note = preview?.limitNote {
+                Text(note).font(.system(size: 10)).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Text("Later local estimates are added. This does not connect to your billing account.")
                 .font(.system(size: 10)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
                 Button("Save total") {
-                    if let value = Double(amount) { onSave(value, observedAt) }
+                    if let parsed { onSave(parsed.spentUsd, observedAt) }
                 }
-                .disabled(isBusy || !Self.validAmount(amount))
+                .disabled(isBusy || parsed == nil)
                 Button("Cancel", action: onCancel)
             }
         }
@@ -544,8 +568,7 @@ struct BillingSyncForm: View {
     }
 
     static func validAmount(_ text: String) -> Bool {
-        guard let value = Double(text) else { return false }
-        return value.isFinite && value >= 0
+        Derive.parsedBilling(text) != nil
     }
 }
 

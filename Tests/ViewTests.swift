@@ -120,6 +120,37 @@ func runViewTests() async {
                                       isBusy: false, onSave: { _, _ in }, onCancel: {}).frame(width: 296)
         let measured = size(billing)
         T.expect(measured.width <= 296 && measured.height > 80, "billing sync form fits")
+
+        // The comparison lines appear only once there is something to compare, and
+        // must still fit the 320pt panel when both are showing.
+        let compared = BillingSyncForm(amount: .constant("$412.80 of $1,000.00 spent"), observedAt: .constant(Date()),
+                                       isBusy: false, monthLimit: 1500, estimate: 550,
+                                       onSave: { _, _ in }, onCancel: {}).frame(width: 296)
+        let comparedSize = size(compared)
+        T.expect(comparedSize.width <= 296 && comparedSize.height > measured.height + 20,
+                 "the limit and estimate lines fit and take real space")
+    }
+
+    await T.suite("the baseline line renders both fresh and stale") {
+        // The wording is asserted in BillingSyncTests; this is the other half, that
+        // the panel draws the line at all. No other fixture carries a baseline, so
+        // without it the branch was never executed by anything.
+        func status(snapshotAt: Double) -> String {
+            """
+            {"enforcement":"on","degraded":false,"enforcement_resume_at":null,"soft_threshold_pct":80,
+             "primary":null,"effort":{"effective_cap":null},
+             "budgets":[{"id":"monthly","scope":"global","window":"month","action":"block",
+               "effective_limit_usd":1000,"spent_usd":415,"remaining_usd":585,"pct":41.5,
+               "exhausted":false,"soft":false,
+               "window_started_at":1790812800000,"window_ends_at":1793491200000,
+               "billing_snapshot":{"at":\(snapshotAt),"spent_usd":412.80}}]}
+            """
+        }
+        let nowMs = Date().timeIntervalSince1970 * 1000
+        let fresh = await model(status: status(snapshotAt: nowMs - 60_000))
+        expectRenders(PanelView(model: fresh), "panel with a fresh billing baseline")
+        let stale = await model(status: status(snapshotAt: nowMs - 3 * 86_400_000))
+        expectRenders(PanelView(model: stale), "panel with a three-day-old billing baseline")
     }
 
     await T.suite("the panel renders each budget shape") {
