@@ -52,6 +52,9 @@ Failures print `file:line`. `T.report()` returns the exit code.
 | `TransportTests` | request building, response mapping, notifier explanations |
 | `WindowTests` | the two window helpers call their injected open action |
 | `GapTests` | odds and ends coverage showed nothing had ever executed |
+| `BillingTests` | billing baselines, UTC month boundaries, warnings, the sync request |
+| `PricingAuditTests` | pricing guesswork detection, its throttle, the panel note |
+| `BillingSyncTests` | pasted usage line, baseline age, the form's comparison |
 
 Add a suite by writing a global `func runFooTests()` in `Tests/FooTests.swift` and
 calling it from `Tests/main.swift` before `exit(T.report())`. `test.sh` globs the

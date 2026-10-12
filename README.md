@@ -244,7 +244,7 @@ the cases that don't — a wedged process, or an agent that was booted out.
 scripts/test.sh
 ```
 
-661 assertions over the parts that fail *quietly* — where being wrong produces
+1063 assertions over the parts that fail *quietly* — where being wrong produces
 plausible output rather than an error: decoding the gateway's payloads (null
 rates, the `degrade` action, a missing `primary`, epoch-ms timestamps), every
 pace boundary from both sides, the bumper's ceiling rule, budget-window parsing,
@@ -255,7 +255,7 @@ Coverage is measured rather than inferred from that count, which is how two file
 totalling 789 lines once sat at zero while the count looked healthy:
 
 ```sh
-scripts/test.sh --coverage    # 86% of lines; --gate fails on a regression
+scripts/test.sh --coverage    # 92% of lines; --gate fails on a regression
 ```
 
 `scripts/coverage-floors.txt` records the per-file floors and, for each file that

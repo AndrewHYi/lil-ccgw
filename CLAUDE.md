@@ -214,7 +214,7 @@ Hand-rolled harness in `Tests/TestSupport.swift`, ~40 lines, because XCTest and
 swift-testing both want SwiftPM or xcodebuild. It reports file and line and exits
 non-zero on failure — verify that by breaking an assertion, not by trusting it.
 
-917 assertions across fourteen suites, covering 90% of lines. **Read
+1063 assertions across seventeen suites, covering 92% of lines. **Read
 `testing-lil-ccgw` before touching tests** — the harness is deliberately unusual
 and an agent that reaches for XCTest will waste an hour.
 
@@ -238,6 +238,9 @@ totalling 789 lines sat at zero while the count read 457.
 | `TransportTests` | request building and response mapping, plus every notifier explanation branch |
 | `WindowTests` | the two window helpers call their injected open action exactly once |
 | `GapTests` | odds and ends coverage measurement showed nothing had ever executed |
+| `BillingTests` | the billing baseline and UTC month boundaries, warnings that cannot claim a block, the sync request and its refusals |
+| `PricingAuditTests` | which models the gateway priced by guesswork, when the check runs, and the panel note |
+| `BillingSyncTests` | parsing a pasted usage line, the baseline's age, and the form's comparison with the gateway |
 
 **Coverage rule: if logic decides something, it gets a test — even when it lives
 inside a `@MainActor` class.** Extract it rather than leaving it unreachable.
