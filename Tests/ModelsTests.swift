@@ -221,6 +221,26 @@ func runModelsTests() {
         )
         T.equal(makeSpendRow(key: "").shortName, "", "empty key survives")
     }
+
+    // A window spelling the app cannot parse is not an error the gateway will ever
+    // report; it would just make a budget quietly misbehave. These pin what the
+    // misbehaviour is, so a change to it is a decision rather than an accident.
+    T.suite("a window the app cannot parse degrades instead of failing") {
+        let odd = makeBudget(pct: 0, id: "odd", window: "fortnight")
+        T.equal(odd.windowSeconds, nil, "an unknown spelling has no duration")
+        let now = Date(timeIntervalSince1970: 1_791_844_431)
+        T.close(odd.spendFrom(now: now).timeIntervalSince1970, now.timeIntervalSince1970 - 86_400,
+                "its breakdown falls back to the last 24 hours rather than the epoch")
+
+        // Unparseable sorts as zero-width, so it can never be mistaken for the
+        // widest blocking window and lose the real ceiling its bumper-hiding.
+        let month = makeBudget(pct: 0, id: "month", window: "month")
+        let other = makeBudget(pct: 0, id: "other", window: "eventually")
+        T.expect(month.isCeiling(among: [odd, month]), "a parseable window outranks an unparseable one")
+        T.expect(!odd.isCeiling(among: [odd, month]), "and the unparseable one is not the ceiling")
+        T.expect(odd.isCeiling(among: [odd, other]) != other.isCeiling(among: [odd, other]),
+                 "two unparseable windows still elect exactly one ceiling")
+    }
 }
 
 // MARK: - Fixtures builders

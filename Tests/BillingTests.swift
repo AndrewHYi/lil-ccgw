@@ -87,4 +87,14 @@ func runBillingModelTests() async {
     transport.fail("/api/budgets", with: .http(400, "invalid observation"))
     await model.syncBilling(spentUsd: 100, at: observedAt)
     T.expect(model.lastError?.contains("invalid observation") == true, "sync failure survives refresh")
+
+    T.currentSuite = "an invalid observation never leaves the app"
+    for spent in [-1.0, .nan, .infinity] {
+        let local = MockTransport.healthy()
+        let client = GatewayClient(transport: local)
+        var rejected: String?
+        do { try await client.syncBilling(spentUsd: spent, at: observedAt) } catch { rejected = error.localizedDescription }
+        T.expect(rejected?.contains("nonnegative") == true, "\(spent) is refused with the reason")
+        T.equal(local.callCount("/api/budgets"), 0, "\(spent) sends nothing: the gateway would only 400 it")
+    }
 }
